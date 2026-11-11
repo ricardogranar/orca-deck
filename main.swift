@@ -39,6 +39,16 @@ func runOrca(_ args: [String], timeout: TimeInterval = 20) -> String {
     return (try? JSONSerialization.data(withJSONObject: obj)).flatMap { String(data: $0, encoding: .utf8) } ?? #"{"ok":false}"#
 }
 
+/// Small debug log at ~/Library/Logs/OrcaDeck.log (touch detection, to tune the pointer hand-back).
+func deckLog(_ msg: String) {
+    let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/OrcaDeck.log")
+    let line = "\(ISO8601DateFormatter().string(from: Date())) \(msg)\n"
+    if let h = try? FileHandle(forWritingTo: url) {
+        if (try? h.seekToEnd()) ?? 0 > 512_000 { try? h.truncate(atOffset: 0) }
+        h.write(line.data(using: .utf8)!); try? h.close()
+    } else { try? line.write(to: url, atomically: true, encoding: .utf8) }
+}
+
 final class FirstMouseWebView: WKWebView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
@@ -51,6 +61,15 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
     /// The app the user was in before touching the deck; we hand focus back to it after a tap.
     var lastOtherApp: NSRunningApplication?
     let q = DispatchQueue(label: "deck.orca", attributes: .concurrent)
+
+    // Touch → pointer hand-back. OpenDisplay turns each touch into real mouse events, which drags the Mac
+    // pointer onto the phone. We hide it while the finger is down and put it back where it was afterwards.
+    var restoreCursor = true
+    var lastOffDeck: NSPoint?          // last pointer position seen outside the deck screen
+    var lastOffDeckAt: TimeInterval = 0
+    var touchFrom: NSPoint?            // where to send the pointer back when the current touch ends
+    var touchStartedAt: TimeInterval = 0
+    var cursorHidden = false
 
     func targetScreen() -> NSScreen? {
         let screens = NSScreen.screens
@@ -120,6 +139,71 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self?.placeAndFullScreen() }
         }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in self?.poll() }
+        startPointerHandBack()
+    }
+
+    // MARK: pointer hand-back
+
+    func deckFrame() -> NSRect? { (window.screen ?? targetScreen())?.frame }
+
+    func startPointerHandBack() {
+        let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.trackPointer() }
+        RunLoop.main.add(t, forMode: .common)
+        NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] e in
+            if e.type == .leftMouseDown { self?.touchBegan(e) } else { self?.touchEnded() }
+            return e
+        }
+    }
+
+    func trackPointer() {
+        let p = NSEvent.mouseLocation
+        if let f = deckFrame(), !f.contains(p) { lastOffDeck = p; lastOffDeckAt = ProcessInfo.processInfo.systemUptime }
+        // Safety net: never leave the pointer hidden (e.g. a lost mouse-up).
+        if cursorHidden && touchFrom == nil { showPointer() }
+        if touchFrom != nil && ProcessInfo.processInfo.systemUptime - touchStartedAt > 15 { touchEnded() }
+    }
+
+    /// A touch is a mouse-down posted by OpenDisplay, or a pointer that teleported onto the deck from another
+    /// screen a moment ago (a real mouse has to travel there first and sits on the deck before clicking).
+    func touchBegan(_ e: NSEvent) {
+        guard restoreCursor, e.window === window else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let pid = pid_t(e.cgEvent?.getIntegerValueField(.eventSourceUnixProcessID) ?? 0)
+        let poster = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? ""
+        let fromOpenDisplay = poster.hasPrefix("com.peetzweg.opensidecar")
+        let teleported = now - lastOffDeckAt < 0.35
+        deckLog("down pid=\(pid) poster=\(poster) teleported=\(teleported) from=\(lastOffDeck.map { "\(Int($0.x)),\(Int($0.y))" } ?? "-")")
+        guard fromOpenDisplay || teleported, let from = lastOffDeck else { return }
+        touchFrom = from
+        touchStartedAt = now
+        if !cursorHidden { NSCursor.hide(); cursorHidden = true }
+    }
+
+    func touchEnded() {
+        guard let from = touchFrom else { return }
+        touchFrom = nil
+        // Let the click land (and OpenDisplay finish its own events) before moving the pointer away.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
+            let upAt = NSEvent.mouseLocation
+            self.warp(to: from)
+            self.showPointer()
+            // If OpenDisplay re-posted the pointer onto the phone right after, send it back once more.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                let p = NSEvent.mouseLocation
+                if self.touchFrom == nil, abs(p.x - upAt.x) < 2, abs(p.y - upAt.y) < 2 { self.warp(to: from) }
+            }
+        }
+    }
+
+    func warp(to p: NSPoint) {
+        // Cocoa uses bottom-left origin on the primary screen; Quartz uses top-left.
+        let h = NSScreen.screens.first?.frame.maxY ?? 0
+        CGWarpMouseCursorPosition(CGPoint(x: p.x, y: h - p.y))
+        CGAssociateMouseAndMouseCursorPosition(1)
+    }
+
+    func showPointer() {
+        if cursorHidden { NSCursor.unhide(); cursorHidden = false }
     }
 
     func yieldFocus() {
@@ -153,6 +237,15 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
+
+    /// Clicking the Dock icon while running: bring the deck back and re-pin it to the iPhone screen.
+    func applicationShouldHandleReopen(_ s: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+        placeAndFullScreen()
+        poll()
+        return false
+    }
 
     func windowDidEnterFullScreen(_ n: Notification) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.yieldFocus() }
@@ -212,6 +305,9 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
             reply("{\"ok\":true}")
         case "yield":
             yieldFocus()
+            reply("{\"ok\":true}")
+        case "prefs":
+            if let r = body["restoreCursor"] as? Bool { restoreCursor = r; if !r { touchFrom = nil; showPointer() } }
             reply("{\"ok\":true}")
         case "sound":
             NSSound(named: NSSound.Name((body["name"] as? String) ?? "Glass"))?.play()
