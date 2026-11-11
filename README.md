@@ -1,5 +1,7 @@
 # Orca Deck
 
+![Orca Deck](docs/thumbnail.jpg)
+
 Side display for [Orca](https://github.com/stablyai/orca) agents, meant for an iPhone used as an extra Mac screen
 via OpenDisplay. At a glance: who needs you, who is working, what just finished — and answer Sí/No with one tap.
 
