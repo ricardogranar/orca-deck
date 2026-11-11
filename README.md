@@ -5,6 +5,15 @@ via OpenDisplay. At a glance: who needs you, who is working, what just finished 
 
 ![Carrusel](docs/screenshots/carousel.png)
 
+## Light and dark
+
+Follows the Mac's light/dark appearance by default (Orca's light and dark tokens). Force one in
+⚙️ → **Tema**: Auto, Claro, Oscuro.
+
+| Claro: lista | Claro: foco + cola | Claro: ajustes |
+|---|---|---|
+| ![Claro lista](docs/screenshots/light-list.png) | ![Claro foco](docs/screenshots/light-focus-queue.png) | ![Claro ajustes](docs/screenshots/light-settings.png) |
+
 ## Portrait
 
 Hold the phone upright and OpenDisplay turns the Mac display into 526×936; the deck switches to a portrait
@@ -29,6 +38,7 @@ canvas automatically (and back when you turn it again). Every view, alert and th
 | ![Foco automático](docs/screenshots/auto-focus-queue.png) | ![Terminal fijado](docs/screenshots/pinned-terminal.png) | ![Ambiente](docs/screenshots/ambient.png) |
 
 The gear menu (saved per device) sets:
+- **Tema**: Auto (follows macOS), Claro, Oscuro.
 - **Vista**: Lista (default), Carrusel, Foco (most urgent agent big + side strip), Mosaico.
 - **Mostrar**: active agents, only urgent ones, or all.
 - **Cuando un agente te necesita**: *Foco* (default: switch to Foco with an amber border until you answer, then
@@ -68,5 +78,5 @@ Touch on the phone needs OpenDisplay to have Accessibility permission on the Mac
 - Opening `web/index.html` in a browser shows mock data; query params preview settings,
   e.g. `?layout=list`, `?view=settings`, `?view=banner`, `?view=full`, `?view=autofocus&waiting=2`,
   `?view=pinned`, `?view=ambient`, `?view=detail`.
-  Open it in a tall window (e.g. 526×936) to preview portrait.
+  Open it in a tall window (e.g. 526×936) to preview portrait; add `&theme=light` or `&theme=dark`.
 - Touch detection is logged to `~/Library/Logs/OrcaDeck.log`.

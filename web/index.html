@@ -11,8 +11,27 @@
   --background:#0a0a0a; --card:#171717; --muted:#262626; --accent:#404040; --border:#ffffff12;
   --foreground:#f0f0f0; --muted-foreground:#acacac; --faint:#6b6b6b; --primary:#e5e5e5; --primary-foreground:#171717;
   --working:#60a5fa; --waiting:#fbbf24; --done:#34d399; --idle:#737373;
+  --yes:#fbbf24; --on-yes:#1c1300; --attn-bg:#2a2208; --attn-text:#fde68a; --body-text:#d4d4d4;
+  --term-bg:#000000; --term-text:#d4d4d4; --shadow:#000000cc; --alert-glow:#3a2d06;
+  --amb-bg:#000000; --amb-clock:#3d3d3d; --amb-text:#5a5a5a; --amb-track:#1c1c1c; --amb-bar:#2f5f99;
+  --knob:#d4d4d4; color-scheme:dark;
   --r:22px;
 }
+/* Light theme: follows macOS when "Auto", or forced from Ajustes → Tema (html[data-theme]). */
+@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]){ --background:#ffffff; --card:#f4f4f4; --muted:#e8e8e8; --accent:#d4d4d4; --border:#0000000f;
+  --foreground:#0a0a0a; --muted-foreground:#5f5f5f; --faint:#8f8f8f; --primary:#171717; --primary-foreground:#fafafa;
+  --working:#2563eb; --waiting:#d97706; --done:#059669; --idle:#8f8f8f;
+  --yes:#fbbf24; --on-yes:var(--on-yes); --attn-bg:#fff4d6; --attn-text:#92400e; --body-text:#333333;
+  --term-bg:#f7f7f7; --term-text:#262626; --shadow:#0000002e; --alert-glow:#fde9b0;
+  --amb-bg:#ffffff; --amb-clock:#cfcfcf; --amb-text:#a3a3a3; --amb-track:#eeeeee; --amb-bar:#93c5fd;
+  --knob:#ffffff; color-scheme:light; } }
+:root[data-theme="light"]{ --background:#ffffff; --card:#f4f4f4; --muted:#e8e8e8; --accent:#d4d4d4; --border:#0000000f;
+  --foreground:#0a0a0a; --muted-foreground:#5f5f5f; --faint:#8f8f8f; --primary:#171717; --primary-foreground:#fafafa;
+  --working:#2563eb; --waiting:#d97706; --done:#059669; --idle:#8f8f8f;
+  --yes:#fbbf24; --on-yes:var(--on-yes); --attn-bg:#fff4d6; --attn-text:#92400e; --body-text:#333333;
+  --term-bg:#f7f7f7; --term-text:#262626; --shadow:#0000002e; --alert-glow:#fde9b0;
+  --amb-bg:#ffffff; --amb-clock:#cfcfcf; --amb-text:#a3a3a3; --amb-track:#eeeeee; --amb-bar:#93c5fd;
+  --knob:#ffffff; color-scheme:light; }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-user-select:none;user-select:none}
 html,body{height:100%;background:var(--background);color:var(--foreground);overflow:hidden;
   font-family:Geist,-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
@@ -58,19 +77,19 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 /* list rows */
 .row{flex:none;min-height:80px;background:var(--card);border:1px solid var(--border);border-radius:18px;padding:10px 14px 10px 22px;
   display:flex;align-items:center;gap:16px;cursor:pointer}
-.row.waiting{border:2px solid var(--waiting);background:linear-gradient(90deg,#2a2208 0%,var(--card) 60%)}
+.row.waiting{border:2px solid var(--waiting);background:linear-gradient(90deg,var(--attn-bg) 0%,var(--card) 60%)}
 .rtx{flex:1;min-width:0}
 .rt{font-size:25px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rn{font-size:19px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-.row.waiting .rn{color:#fde68a}
+.row.waiting .rn{color:var(--attn-text)}
 .rtime{font-size:19px;color:var(--muted-foreground);font-variant-numeric:tabular-nums;flex:none;padding-right:8px}
 .sbtn{height:58px;min-width:76px;border-radius:14px;padding:0 18px;font-size:21px;font-weight:600;background:var(--muted);flex:none}
-.sbtn.yes{background:var(--waiting);color:#1c1300}
+.sbtn.yes{background:var(--yes);color:var(--on-yes)}
 .sbtn:active{transform:scale(.96)}
 
 /* grid tiles */
 .tile{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:18px 18px 16px;display:flex;flex-direction:column;cursor:pointer;min-width:0}
-.tile.waiting{border:2px solid var(--waiting);background:linear-gradient(180deg,#2a2208 0%,var(--card) 70%)}
+.tile.waiting{border:2px solid var(--waiting);background:linear-gradient(180deg,var(--attn-bg) 0%,var(--card) 70%)}
 .tile .pill{font-size:18px;gap:8px} .tile .dot{width:12px;height:12px}
 .tile .tt{font-size:23px;line-height:1.18;font-weight:600;margin-top:10px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .tile .tn{font-size:17px;line-height:1.3;color:var(--muted-foreground);margin-top:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -85,7 +104,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .card{flex:none;width:430px;height:100%;max-height:398px;scroll-snap-align:start;background:var(--card);border:1px solid var(--border);
   border-radius:var(--r);padding:24px 26px 22px;display:flex;flex-direction:column;cursor:pointer;position:relative;transition:transform .15s}
 .card:active{transform:scale(.985)}
-.card.waiting{border:2px solid var(--waiting);background:linear-gradient(180deg,#2a2208 0%,var(--card) 55%)}
+.card.waiting{border:2px solid var(--waiting);background:linear-gradient(180deg,var(--attn-bg) 0%,var(--card) 55%)}
 .pill{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:600;color:var(--c)}
 .pill .t{margin-left:auto;color:var(--muted-foreground);font-weight:500;font-variant-numeric:tabular-nums}
 .dot{width:14px;height:14px;border-radius:50%;background:var(--c);flex:none}
@@ -97,13 +116,13 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .now{font-size:22px;line-height:1.3;color:var(--muted-foreground);margin-top:12px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.card.waiting .now{color:#fde68a}
+.card.waiting .now{color:var(--attn-text)}
 .where{font-size:19px;color:var(--faint);margin-top:auto;padding-top:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .answers{display:flex;gap:12px;margin-top:auto;padding-top:14px}
 .btn{height:66px;border-radius:16px;padding:0 24px;font-size:24px;font-weight:600;background:var(--muted);display:flex;align-items:center;justify-content:center;gap:10px;flex:none}
 .btn:active{transform:scale(.96)}
 .btn.primary{background:var(--primary);color:var(--primary-foreground)}
-.btn.yes{background:var(--waiting);color:#1c1300;flex:1}
+.btn.yes{background:var(--yes);color:var(--on-yes);flex:1}
 .btn.no{flex:1}
 .btn svg{width:24px;height:24px}
 #dots{height:30px;flex:none;display:flex;justify-content:center;align-items:center;gap:8px}
@@ -122,13 +141,13 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .dtitle{font-size:34px;line-height:1.15;font-weight:600;letter-spacing:-.02em;padding:0 28px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;flex:none}
 .dwhere{font-size:20px;color:var(--faint);padding:6px 28px 0;flex:none}
-#dbody{flex:1;overflow-y:auto;margin:14px 28px 0;font-size:24px;line-height:1.4;color:#d4d4d4;min-height:0}
+#dbody{flex:1;overflow-y:auto;margin:14px 28px 0;font-size:24px;line-height:1.4;color:var(--body-text);min-height:0}
 #dbody::-webkit-scrollbar{display:none}
 #dbody p+p{margin-top:10px}
 #dbody .lbl{font-size:18px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
-#dbody .ask{font-size:28px;color:#fde68a;font-weight:500}
-#dbody.term{background:#000;border:1px solid var(--border);border-radius:16px;padding:14px 16px;
-  font:17px/1.3 "SF Mono",ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:#d4d4d4}
+#dbody .ask{font-size:28px;color:var(--attn-text);font-weight:500}
+#dbody.term{background:var(--term-bg);border:1px solid var(--border);border-radius:16px;padding:14px 16px;
+  font:17px/1.3 "SF Mono",ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--term-text)}
 .dactions{height:100px;flex:none;display:flex;gap:12px;align-items:center;padding:0 28px}
 
 /* ── settings ── */
@@ -142,21 +161,22 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .seg{display:flex;gap:4px;padding:4px;background:var(--card);border-radius:16px;flex:none}
 .seg button{height:54px;padding:0 15px;border-radius:12px;font-size:19px;font-weight:600;color:var(--muted-foreground)}
 .seg button.on{background:var(--accent);color:var(--foreground)}
+.seg button svg{width:20px;height:20px;vertical-align:-4px;margin-right:6px}
 .tog{width:88px;height:52px;border-radius:26px;background:var(--muted);position:relative;flex:none;transition:background .15s}
-.tog::after{content:"";position:absolute;top:5px;left:5px;width:42px;height:42px;border-radius:50%;background:#d4d4d4;transition:transform .15s}
+.tog::after{content:"";position:absolute;top:5px;left:5px;width:42px;height:42px;border-radius:50%;background:var(--knob);box-shadow:0 1px 3px #0003;transition:transform .15s}
 .tog.on{background:var(--done)} .tog.on::after{transform:translateX(36px);background:#fff}
 
 /* ── alerts ── */
 #banner{position:absolute;left:20px;right:20px;top:10px;min-height:96px;z-index:8;display:flex;align-items:center;gap:14px;padding:10px 12px 10px 22px;
-  background:#2a2208;border:2px solid var(--waiting);border-radius:20px;box-shadow:0 10px 40px #000c;transform:translateY(-140px);transition:transform .25s}
+  background:var(--attn-bg);border:2px solid var(--waiting);border-radius:20px;box-shadow:0 10px 40px var(--shadow);transform:translateY(-140px);transition:transform .25s}
 #banner.on{transform:none}
-#banner .rn{color:#fde68a}
+#banner .rn{color:var(--attn-text)}
 #alert{position:absolute;inset:0;z-index:8;display:none;flex-direction:column;padding:30px 36px 28px;
-  background:radial-gradient(120% 90% at 50% 0%,#3a2d06 0%,#0a0a0a 70%)}
+  background:radial-gradient(120% 90% at 50% 0%,var(--alert-glow) 0%,var(--background) 70%)}
 #alert.on{display:flex}
 #alert .pill{font-size:26px}
 #alert .atitle{font-size:46px;line-height:1.1;font-weight:600;letter-spacing:-.02em;margin-top:18px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-#alert .aask{font-size:26px;line-height:1.3;color:#fde68a;margin-top:14px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+#alert .aask{font-size:26px;line-height:1.3;color:var(--attn-text);margin-top:14px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 #alert .arow{display:flex;gap:12px;margin-top:auto}
 #app.flash::after{content:"";position:absolute;inset:0;border:6px solid var(--done);border-radius:14px;pointer-events:none;z-index:7;animation:fade 2.5s ease-out forwards}
 @keyframes fade{0%{opacity:1}100%{opacity:0}}
@@ -169,19 +189,19 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .pin{display:flex;flex-direction:column;gap:10px;min-height:0;height:100%}
 #phead{flex:none;display:flex;align-items:center;gap:12px}
 #phead .rt{flex:1;min-width:0;font-size:24px}
-.attnpill{height:56px;padding:0 18px;border-radius:14px;background:var(--waiting);color:#1c1300;font-size:20px;font-weight:700;flex:none}
-#pterm{flex:1;min-height:0;overflow-y:auto;background:#000;border:1px solid var(--border);border-radius:16px;padding:12px 16px;
-  font:16px/1.3 "SF Mono",ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:#d4d4d4}
+.attnpill{height:56px;padding:0 18px;border-radius:14px;background:var(--yes);color:var(--on-yes);font-size:20px;font-weight:700;flex:none}
+#pterm{flex:1;min-height:0;overflow-y:auto;background:var(--term-bg);border:1px solid var(--border);border-radius:16px;padding:12px 16px;
+  font:16px/1.3 "SF Mono",ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--term-text)}
 /* ambient */
-#ambient{position:absolute;inset:0;z-index:6;background:#000;display:none;flex-direction:column;justify-content:center;padding:0 80px;cursor:pointer}
+#ambient{position:absolute;inset:0;z-index:6;background:var(--amb-bg);display:none;flex-direction:column;justify-content:center;padding:0 80px;cursor:pointer}
 #ambient.on{display:flex}
-#ambient .aclock{font-size:150px;font-weight:600;letter-spacing:-.04em;color:#3d3d3d;text-align:center;line-height:1;font-variant-numeric:tabular-nums}
+#ambient .aclock{font-size:150px;font-weight:600;letter-spacing:-.04em;color:var(--amb-clock);text-align:center;line-height:1;font-variant-numeric:tabular-nums}
 #ambient .bars{margin-top:36px;display:flex;flex-direction:column;gap:16px}
-.bar .bl{display:flex;justify-content:space-between;font-size:18px;color:#5a5a5a;margin-bottom:7px}
-.bar .bt{height:4px;border-radius:2px;background:#1c1c1c;overflow:hidden;position:relative}
-.bar .bt i{position:absolute;top:0;bottom:0;width:30%;border-radius:2px;background:#2f5f99;animation:slide 2.4s ease-in-out infinite}
+.bar .bl{display:flex;justify-content:space-between;font-size:18px;color:var(--amb-text);margin-bottom:7px}
+.bar .bt{height:4px;border-radius:2px;background:var(--amb-track);overflow:hidden;position:relative}
+.bar .bt i{position:absolute;top:0;bottom:0;width:30%;border-radius:2px;background:var(--amb-bar);animation:slide 2.4s ease-in-out infinite}
 @keyframes slide{0%{left:-30%}100%{left:100%}}
-#ambient .amsg{text-align:center;font-size:20px;color:#3d3d3d;margin-top:24px}
+#ambient .amsg{text-align:center;font-size:20px;color:var(--amb-clock);margin-top:24px}
 /* ── portrait (iPhone held upright: OpenDisplay turns the Mac display into 526×936) ── */
 .portrait .head{height:auto;flex-wrap:wrap;row-gap:6px;padding:16px 22px 10px}
 .portrait .summary{order:9;width:100%;font-size:24px}
@@ -284,6 +304,9 @@ const ICON = {
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
   bellOn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 003.4 0"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>',
+  auto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 010 18z" fill="currentColor"/></svg>',
   bellOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.7 3A6 6 0 0118 8a21.3 21.3 0 00.6 5M17 17H3s3-2 3-9a4.67 4.67 0 01.3-1.7M10.3 21a1.94 1.94 0 003.4 0M2 2l20 20"/></svg>',
 };
 
@@ -298,12 +321,13 @@ function call(op, extra = {}) {
 const orca = (...args) => call("orca", { args });
 
 /* ── preferences (gear menu) ── */
-const DEF = { layout: "list", show: "active", alert: "focus", doneFor: 4, sndWait: true, sndDone: true, repeat: true, escalate: true,
+const DEF = { theme: "auto", layout: "list", show: "active", alert: "focus", doneFor: 4, sndWait: true, sndDone: true, repeat: true, escalate: true,
   ambient: true, restoreCursor: true, autoHome: true };
 const P = Object.assign({}, DEF, store.get("prefs", {}));
 if (!native) for (const [k, v] of new URLSearchParams(location.search)) if (k in DEF) P[k] = typeof DEF[k] === "number" ? +v : typeof DEF[k] === "boolean" ? v === "1" : v;
 const SETTINGS = [
   ["layout", "Vista", "Cómo se colocan los agentes", [["carousel", "Carrusel"], ["list", "Lista"], ["focus", "Foco"], ["grid", "Mosaico"]]],
+  ["theme", "Tema", "Auto sigue el modo claro u oscuro del Mac", [["auto", ICON.auto + "Auto"], ["light", ICON.sun + "Claro"], ["dark", ICON.moon + "Oscuro"]]],
   ["show", "Mostrar", "Qué agentes aparecen", [["active", "Activos"], ["attention", "Solo urgentes"], ["all", "Todos"]]],
   ["alert", "Cuando un agente te necesita", "Foco: pasa a vista Foco hasta que respondas, y vuelve a la tuya", [["focus", "Foco"], ["jump", "Saltar"], ["banner", "Banner"], ["full", "Grande"], ["glow", "Borde"]]],
   ["doneFor", "Terminados visibles", "Cuánto siguen en «Activos»", [[1, "1 h"], [4, "4 h"], [12, "12 h"]]],
@@ -318,10 +342,23 @@ const SETTINGS = [
 function setPref(k, v) {
   P[k] = v; store.set("prefs", P);
   if (k === "restoreCursor") call("prefs", { restoreCursor: v });
+  if (k === "theme") applyTheme();
   if (k === "layout") { const r = $("#rail"); r.scrollLeft = r.scrollTop = 0; }
   renderSettings(); render();
 }
 call("prefs", { restoreCursor: P.restoreCursor });
+
+/* Theme: "auto" follows macOS (prefers-color-scheme); "light"/"dark" force it. The native window paints the
+   same background so there is no flash of the other theme around the canvas. */
+const darkMQ = matchMedia("(prefers-color-scheme: dark)");
+function applyTheme() {
+  const root = document.documentElement;
+  if (P.theme === "auto") delete root.dataset.theme; else root.dataset.theme = P.theme;
+  const dark = P.theme === "dark" || (P.theme === "auto" && darkMQ.matches);
+  call("theme", { dark });
+}
+darkMQ.addEventListener("change", applyTheme);
+applyTheme();
 
 /* ── state ── */
 const S = { agents: [], byKey: new Map(), prev: store.get("prev", {}), sel: null, view: "summary",

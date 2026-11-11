@@ -309,6 +309,11 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
         case "yield":
             yieldFocus()
             reply("{\"ok\":true}")
+        case "theme":
+            // Match the window behind the canvas to the deck's theme (Orca's --background).
+            let dark = (body["dark"] as? Bool) ?? true
+            window.backgroundColor = dark ? NSColor(red: 0.04, green: 0.04, blue: 0.04, alpha: 1) : .white
+            reply("{\"ok\":true}")
         case "prefs":
             if let r = body["restoreCursor"] as? Bool { restoreCursor = r; if !r { touchFrom = nil; showPointer() } }
             reply("{\"ok\":true}")
