@@ -157,6 +157,30 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 #alert .atitle{font-size:46px;line-height:1.1;font-weight:600;letter-spacing:-.02em;margin-top:18px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 #alert .aask{font-size:26px;line-height:1.3;color:#fde68a;margin-top:14px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 #alert .arow{display:flex;gap:12px;margin-top:auto}
+#app.flash::after{content:"";position:absolute;inset:0;border:6px solid var(--done);border-radius:14px;pointer-events:none;z-index:7;animation:fade 2.5s ease-out forwards}
+@keyframes fade{0%{opacity:1}100%{opacity:0}}
+/* focus side strip as approval queue */
+.qhead{flex:none;font-size:17px;font-weight:600;color:var(--waiting);text-transform:uppercase;letter-spacing:.06em;padding:2px 4px 0}
+.mini.q{flex-direction:column;align-items:stretch;gap:8px;padding:12px 12px 12px 16px}
+.mini.q .rt{display:flex;align-items:center;gap:10px}
+.mini.q .qb{display:flex;gap:8px} .mini.q .sbtn{flex:1;height:54px;min-width:0}
+/* pinned terminal */
+.pin{display:flex;flex-direction:column;gap:10px;min-height:0;height:100%}
+#phead{flex:none;display:flex;align-items:center;gap:12px}
+#phead .rt{flex:1;min-width:0;font-size:24px}
+.attnpill{height:56px;padding:0 18px;border-radius:14px;background:var(--waiting);color:#1c1300;font-size:20px;font-weight:700;flex:none}
+#pterm{flex:1;min-height:0;overflow-y:auto;background:#000;border:1px solid var(--border);border-radius:16px;padding:12px 16px;
+  font:16px/1.3 "SF Mono",ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:#d4d4d4}
+/* ambient */
+#ambient{position:absolute;inset:0;z-index:6;background:#000;display:none;flex-direction:column;justify-content:center;padding:0 80px;cursor:pointer}
+#ambient.on{display:flex}
+#ambient .aclock{font-size:150px;font-weight:600;letter-spacing:-.04em;color:#3d3d3d;text-align:center;line-height:1;font-variant-numeric:tabular-nums}
+#ambient .bars{margin-top:36px;display:flex;flex-direction:column;gap:16px}
+.bar .bl{display:flex;justify-content:space-between;font-size:18px;color:#5a5a5a;margin-bottom:7px}
+.bar .bt{height:4px;border-radius:2px;background:#1c1c1c;overflow:hidden;position:relative}
+.bar .bt i{position:absolute;top:0;bottom:0;width:30%;border-radius:2px;background:#2f5f99;animation:slide 2.4s ease-in-out infinite}
+@keyframes slide{0%{left:-30%}100%{left:100%}}
+#ambient .amsg{text-align:center;font-size:20px;color:#3d3d3d;margin-top:24px}
 #app.glow::after{content:"";position:absolute;inset:0;border:6px solid var(--waiting);border-radius:14px;pointer-events:none;z-index:7;animation:pulse 1s ease-in-out infinite}
 
 #toast{position:absolute;left:50%;bottom:22px;transform:translate(-50%,120px);background:var(--primary);color:var(--primary-foreground);
@@ -204,6 +228,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
     <div id="sbody" class="scroller"></div>
   </section>
 
+  <div id="ambient" data-act="wake"></div>
   <div id="banner"></div>
   <div id="alert"></div>
   <div class="offline" id="offline"><div><b>Orca no responde</b><span>Abre Orca en el Mac y esto se conecta solo.</span></div></div>
@@ -239,16 +264,20 @@ function call(op, extra = {}) {
 const orca = (...args) => call("orca", { args });
 
 /* ── preferences (gear menu) ── */
-const DEF = { layout: "carousel", show: "active", alert: "jump", doneFor: 4, sndWait: true, sndDone: true, restoreCursor: true, autoHome: true };
+const DEF = { layout: "list", show: "active", alert: "focus", doneFor: 4, sndWait: true, sndDone: true, repeat: true, escalate: true,
+  ambient: true, restoreCursor: true, autoHome: true };
 const P = Object.assign({}, DEF, store.get("prefs", {}));
 if (!native) for (const [k, v] of new URLSearchParams(location.search)) if (k in DEF) P[k] = typeof DEF[k] === "number" ? +v : typeof DEF[k] === "boolean" ? v === "1" : v;
 const SETTINGS = [
   ["layout", "Vista", "Cómo se colocan los agentes", [["carousel", "Carrusel"], ["list", "Lista"], ["focus", "Foco"], ["grid", "Mosaico"]]],
   ["show", "Mostrar", "Qué agentes aparecen", [["active", "Activos"], ["attention", "Solo urgentes"], ["all", "Todos"]]],
-  ["alert", "Cuando un agente te necesita", "Saltar a su tarjeta, banner arriba, alerta a pantalla completa o solo un borde", [["jump", "Saltar"], ["banner", "Banner"], ["full", "Grande"], ["glow", "Borde"]]],
+  ["alert", "Cuando un agente te necesita", "Foco: pasa a vista Foco hasta que respondas, y vuelve a la tuya", [["focus", "Foco"], ["jump", "Saltar"], ["banner", "Banner"], ["full", "Grande"], ["glow", "Borde"]]],
   ["doneFor", "Terminados visibles", "Cuánto siguen en «Activos»", [[1, "1 h"], [4, "4 h"], [12, "12 h"]]],
   ["sndWait", "Sonido cuando te necesita", "Si el sonido general está activado"],
   ["sndDone", "Sonido cuando termina", "Si el sonido general está activado"],
+  ["repeat", "Repetir el aviso", "Otra vez a los 2 min si sigue esperando"],
+  ["escalate", "Pantalla completa si no respondes", "Tras 5 min esperando"],
+  ["ambient", "Modo ambiente", "Tras 10 min sin avisos ni toques: reloj y barras; despierta con cualquier aviso"],
   ["restoreCursor", "Devolver el puntero al Mac", "Al tocar el iPhone, el ratón vuelve a donde estaba y no se ve en el iPhone"],
   ["autoHome", "Volver al inicio solo", "Tras 1 min sin tocar la pantalla"],
 ];
@@ -262,7 +291,8 @@ call("prefs", { restoreCursor: P.restoreCursor });
 
 /* ── state ── */
 const S = { agents: [], byKey: new Map(), prev: store.get("prev", {}), sel: null, view: "summary",
-  sound: store.get("sound", true), lastOk: Date.now(), screenText: "", lastTouch: Date.now(), alertKey: null, dirty: false };
+  sound: store.get("sound", true), lastOk: Date.now(), screenText: "", lastTouch: Date.now(), alertKey: null, alertStyle: null, dirty: false,
+  autoFocus: false, pinned: store.get("pin", null), lastEvent: Date.now(), nagged: new Set(), escalated: new Set() };
 let drag = null, moved = false, holdFocus = false;
 
 function kind(state) {
@@ -342,8 +372,9 @@ function changes(list) {
     next[a.key] = a.k;
     const was = S.prev[a.key];
     if (first || was === a.k) continue;
+    S.lastEvent = Date.now();
     if (a.k === "waiting") { if (P.sndWait) chime = "Funk"; alertKey = alertKey || a.key; }
-    else if (a.k === "done" && was === "working" && P.sndDone) { chime = chime || "Glass"; }
+    else if (a.k === "done" && was === "working") { if (P.sndDone) chime = chime || "Glass"; flash(); }
   }
   S.prev = next; store.set("prev", next);
   if (chime && S.sound) call("sound", { name: chime });
@@ -351,25 +382,39 @@ function changes(list) {
 }
 
 /* ── "an agent needs you" styles ── */
-function raiseAlert(key) {
+function flash() { const A = $("#app"); A.classList.remove("flash"); void A.offsetWidth; A.classList.add("flash"); setTimeout(() => A.classList.remove("flash"), 2600); }
+function glow() { $("#app").classList.add("glow"); clearTimeout(glow.h); glow.h = setTimeout(() => $("#app").classList.remove("glow"), 12e3); }
+function raiseAlert(key, style = P.alert) {
   const a = S.byKey.get(key); if (!a) return;
-  if (P.alert === "jump") {
+  wake();
+  S.alertStyle = style;
+  if (style === "focus") {
+    S.autoFocus = true; glow(); showHome(); render();
+  } else if (style === "jump") {
     showHome(); requestAnimationFrame(() => $("#rail").scrollTo({ left: 0, top: 0, behavior: "smooth" }));
-  } else if (P.alert === "banner") {
+  } else if (style === "banner") {
     S.alertKey = key; paintAlerts();
     clearTimeout(raiseAlert.h); raiseAlert.h = setTimeout(closeAlerts, 10e3);
-  } else if (P.alert === "full") {
+  } else if (style === "full") {
     S.alertKey = key; paintAlerts();
-  } else if (P.alert === "glow") {
-    $("#app").classList.add("glow"); clearTimeout(raiseAlert.g); raiseAlert.g = setTimeout(() => $("#app").classList.remove("glow"), 12e3);
-  }
+  } else if (style === "glow") glow();
 }
+
+/* Repeat after 2 min, full screen after 5 min, for agents still waiting. */
+setInterval(() => {
+  for (const a of S.agents) {
+    if (a.k !== "waiting" || !a.at) continue;
+    const id = a.key + "@" + a.at, age = Date.now() - a.at;
+    if (P.escalate && age > 300e3 && !S.escalated.has(id)) { S.escalated.add(id); if (P.sndWait && S.sound) call("sound", { name: "Funk" }); raiseAlert(a.key, "full"); break; }
+    if (P.repeat && age > 120e3 && !S.nagged.has(id)) { S.nagged.add(id); if (P.sndWait && S.sound) call("sound", { name: "Funk" }); glow(); wake(); break; }
+  }
+}, 5e3);
 function closeAlerts() { S.alertKey = null; $("#banner").classList.remove("on"); $("#alert").classList.remove("on"); }
 function paintAlerts() {
   const a = S.alertKey && S.byKey.get(S.alertKey);
   if (!a || a.k !== "waiting") { if (S.alertKey) closeAlerts(); $("#app").classList.toggle("glow", $("#app").classList.contains("glow") && S.agents.some(x => x.k === "waiting")); return; }
   const yn = a.handle ? `<button class="sbtn yes" data-act="yes">Sí</button><button class="sbtn" data-act="no">No</button>` : "";
-  if (P.alert === "banner") {
+  if (S.alertStyle === "banner") {
     const B = $("#banner"); B.dataset.key = a.key;
     B.innerHTML = `<span class="dot" style="--c:var(--waiting)"></span><div class="rtx"><div class="rt">${esc(titleOf(a))}</div><div class="rn">${esc(askText(a))}</div></div>
       ${yn}<button class="sbtn" data-act="view">Ver</button>`;
@@ -413,7 +458,10 @@ function render() {
   $("#gear").innerHTML = ICON.gear;
 
   const rail = $("#rail"), left = rail.scrollLeft, top = rail.scrollTop, sideTop = rail.querySelector(".side")?.scrollTop || 0;
-  const L = P.layout;
+  if (S.autoFocus && !c.waiting) S.autoFocus = false;            // answered → back to the user's view
+  if (S.pinned && !S.byKey.has(S.pinned) && S.agents.length) { S.pinned = null; store.set("pin", null); }
+  const L = S.autoFocus ? "focus" : S.pinned ? "pinned" : P.layout;
+  if (L === "pinned") { renderPinned(rail, c.waiting); dots(); paintAlerts(); if (S.sel) renderDetail(); return; }
   rail.className = "lay-" + L + (L === "carousel" ? " scroller hscroll" : L === "focus" ? "" : " scroller");
   if (!vis.length) {
     rail.className = "";
@@ -421,7 +469,12 @@ function render() {
       <div class="msg">${P.show === "attention" ? "Nada urgente · ningún agente te necesita" : "Todo tranquilo · ningún agente trabajando"}</div></div></div>`;
   } else if (L === "list") rail.innerHTML = vis.map(rowHTML).join("");
   else if (L === "grid") rail.innerHTML = vis.map(tileHTML).join("");
-  else if (L === "focus") rail.innerHTML = cardHTML(vis[0]) + `<div class="side scroller">${vis.slice(1).map(miniHTML).join("") || '<div class="none">Nada más en marcha</div>'}</div>`;
+  else if (L === "focus") {
+    const rest = vis.slice(1), q = rest.filter(a => a.k === "waiting");
+    const side = (q.length ? `<div class="qhead">Cola · ${q.length} más ${q.length > 1 ? "esperan" : "espera"}</div>` + q.map(queueHTML).join("") : "")
+      + rest.filter(a => a.k !== "waiting").map(miniHTML).join("");
+    rail.innerHTML = cardHTML(vis[0]) + `<div class="side scroller">${side || '<div class="none">Nada más en marcha</div>'}</div>`;
+  }
   else rail.innerHTML = vis.map(cardHTML).join("") + `<div style="flex:none;width:10px"></div>`;
   rail.scrollLeft = left; rail.scrollTop = top;
   const side = rail.querySelector(".side"); if (side) side.scrollTop = sideTop;
@@ -443,6 +496,22 @@ function tileHTML(a) {
     <div class="tt" >${esc(titleOf(a))}</div>
     ${yn ? "" : `<div class="tn">${esc(nowText(a))}</div>`}
     ${yn ? `<div class="ans">${yn}</div>` : `<div class="tw">${esc(a.w.repo)} · ${esc(a.w.displayName || "")}</div>`}</div>`;
+}
+function queueHTML(a) {
+  return `<div class="mini q waiting" data-key="${esc(a.key)}"><div class="rt"><span class="dot"></span><span style="overflow:hidden;text-overflow:ellipsis">${esc(titleOf(a))}</span></div>
+    ${a.handle ? `<div class="qb">${yesNo(a)}</div>` : `<div class="rn">${esc(askText(a))}</div>`}</div>`;
+}
+function renderPinned(rail, waiting) {
+  const a = S.byKey.get(S.pinned); if (!a) return;
+  rail.className = "";
+  if (!rail.querySelector(`.pin[data-key="${CSS.escape(a.key)}"]`)) {
+    rail.innerHTML = `<div class="pin" data-key="${esc(a.key)}"><div id="phead"></div><div id="pterm" class="scroller">Cargando…</div></div>`;
+    S.pinText = ""; refreshTerm();
+  }
+  const other = S.agents.find(x => x.k === "waiting" && x.key !== a.key);
+  $("#phead").innerHTML = `<div class="pill ${a.k}"><span class="dot"></span></div><div class="rt">${esc(titleOf(a))}</div>
+    ${other ? `<button class="attnpill" data-act="view" data-key="${esc(other.key)}">${waiting} te ${waiting > 1 ? "necesitan" : "necesita"}</button>` : ""}
+    ${yesNo(a)}<button class="sbtn" data-act="unpin">Soltar</button>`;
 }
 function miniHTML(a) {
   return `<div class="mini ${a.k}" data-key="${esc(a.key)}"><span class="dot"></span>
@@ -514,31 +583,36 @@ function renderDetail() {
   if (a.k === "waiting" && a.handle) acts.push(`<button class="btn yes" data-act="yes">${ICON.check} Sí</button>`, `<button class="btn no" data-act="no">No</button>`);
   acts.push(`<button class="btn primary" data-act="open">${ICON.open} Abrir en Orca</button>`);
   if (a.handle) acts.push(view === "term"
-    ? `<button class="btn" data-act="summary">${ICON.text} Resumen</button>`
+    ? `<button class="btn" data-act="summary">${ICON.text} Resumen</button><button class="btn" data-act="pin">Fijar</button>`
     : `<button class="btn" data-act="term">${ICON.term} Terminal</button>`);
   if (a.fresh && a.k !== "waiting") acts.push(`<button class="btn" data-act="seen">${ICON.check} Visto</button>`);
   $("#dactions").innerHTML = acts.join("");
 }
 
 let termBusy = false;
+const pinnedOnScreen = () => !S.sel && S.pinned && !S.autoFocus && !$("#home").classList.contains("hidden") && $("#pterm");
 async function refreshTerm() {
-  const a = S.byKey.get(S.sel);
-  if (!a?.handle || termBusy || S.view !== "term") return;
+  const pin = !(S.sel && S.view === "term") && pinnedOnScreen();
+  const a = S.byKey.get(pin ? S.pinned : S.sel);
+  if (!a?.handle || termBusy || (!pin && S.view !== "term")) return;
   termBusy = true;
   const r = await orca("terminal", "read", "--terminal", a.handle, "--screen");
   termBusy = false;
   const tail = r?.result?.terminal?.tail;
-  if (!Array.isArray(tail)) { S.screenText = "No se pudo leer el terminal."; paintTerm(); return; }
-  let e = tail.length; while (e && !tail[e - 1].trim()) e--;
-  S.screenText = tail.slice(Math.max(0, e - 40), e).map(l => l.replace(/\s+$/, "")).join("\n");
-  paintTerm();
+  let text = "No se pudo leer el terminal.";
+  if (Array.isArray(tail)) {
+    let e = tail.length; while (e && !tail[e - 1].trim()) e--;
+    text = tail.slice(Math.max(0, e - 40), e).map(l => l.replace(/\s+$/, "")).join("\n");
+  }
+  if (pin) { const T = $("#pterm"); if (T && T.textContent !== text) { T.textContent = text; T.scrollTop = T.scrollHeight; } return; }
+  S.screenText = text; paintTerm();
 }
 let painted = "";
 function paintTerm() {
   const B = $("#dbody"); if (!B.classList.contains("term") || S.screenText === painted) return;
   B.textContent = painted = S.screenText; B.scrollTop = B.scrollHeight;
 }
-setInterval(() => { if (S.sel && S.view === "term") refreshTerm(); }, 1500);
+setInterval(() => { if ((S.sel && S.view === "term") || pinnedOnScreen()) refreshTerm(); }, 1500);
 
 /* ── actions ── */
 function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 1600); }
@@ -549,9 +623,12 @@ async function act(name, a) {
   if (name === "back") return showHome();
   if (name === "settings") return showSettings();
   if (name === "dismiss") return closeAlerts();
+  if (name === "wake") return wake();
+  if (name === "unpin") { S.pinned = null; store.set("pin", null); toast("Terminal suelto"); return render(); }
   if (name === "sound") { S.sound = !S.sound; store.set("sound", S.sound); toast(S.sound ? "Sonido activado" : "Sonido desactivado"); return render(); }
   if (!a) return;
   if (name === "view") return showDetail(a.key);
+  if (name === "pin") { S.pinned = a.key; store.set("pin", a.key); toast("Fijado en el inicio"); showHome(); return render(); }
   if (name === "open") {
     call("focusOrca");   // first, while the deck is still the active app (macOS only lets the active app hand over focus)
     const r = await orca("worktree", "activate", "--worktree", wtSel(a));
@@ -598,6 +675,7 @@ document.addEventListener("mouseup", () => {
   setTimeout(() => { if (!holdFocus) call("yield"); holdFocus = false; }, 0);
 });
 document.addEventListener("click", e => {
+  if ($("#ambient").classList.contains("on")) { e.stopPropagation(); e.preventDefault(); wake(); return; }
   if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; return; }
   const btn = e.target.closest("[data-act]");
   if (btn?.dataset.act === "open") holdFocus = true;
@@ -606,8 +684,23 @@ document.addEventListener("click", e => {
   const holder = e.target.closest("[data-key]");
   const key = holder?.dataset.key || S.sel;
   if (btn) { act(btn.dataset.act, S.byKey.get(key)); return; }
-  if (holder) showDetail(key);
+  if (holder && !holder.classList.contains("pin")) showDetail(key);   // taps on the pinned terminal itself do nothing
 }, true);
+
+/* Ambient: after 10 min with nothing waiting, no state changes and no touches, dim to a clock + thin bars. */
+function wake() { S.lastTouch = Date.now(); $("#ambient").classList.remove("on"); }
+function paintAmbient() {
+  const working = S.agents.filter(a => a.k === "working").slice(0, 4);
+  $("#ambient").innerHTML = `<div class="aclock">${clockText()}</div>` + (working.length
+    ? `<div class="bars">${working.map(a => `<div class="bar"><div class="bl"><span>${esc(titleOf(a))}</span><span>${ago(a.at)}</span></div><div class="bt"><i></i></div></div>`).join("")}</div>`
+    : `<div class="amsg">Todo tranquilo</div>`);
+}
+setInterval(() => {
+  const amb = $("#ambient"), quiet = !S.agents.some(a => a.k === "waiting");
+  const idle = Date.now() - Math.max(S.lastTouch, S.lastEvent) > 600e3;
+  if (P.ambient && quiet && idle && !S.alertKey) { paintAmbient(); amb.classList.add("on"); }
+  else if (amb.classList.contains("on")) amb.classList.remove("on");
+}, 5e3);
 
 /* After a minute without touches, go back to the overview. */
 setInterval(() => { if (P.autoHome && (S.sel || !$("#settings").classList.contains("hidden")) && Date.now() - S.lastTouch > 60e3) showHome(); }, 5e3);
@@ -633,7 +726,15 @@ window.mock = () => {
     { worktreeId: "r::c", repo: "landing", displayName: "black-friday", agents: [A(2, "done", { activity: { unread: true } }), A(3, "working", { toolName: "Bash", toolInput: "pnpm test:e2e" })] },
   ] } }, { result: { terminals: [{ tabId: "t0", leafId: "l", handle: "h0" }] } });
 };
-if (!native) { mock(); const v = new URLSearchParams(location.search).get("view");
+if (!native) { const qs = new URLSearchParams(location.search);
+  if (qs.get("waiting") === "2") { const m = mock; window.mock = () => { const u = deck.update; deck.update = (ps, t) => {
+    ps.result.worktrees[2].agents[1] = { ...ps.result.worktrees[2].agents[1], state: "waiting", toolName: "Edit", toolInput: "tests/onboarding.spec.ts" };
+    ps.result.worktrees.push({ worktreeId: "r::d", repo: "orca-deck", displayName: "ambient", agents: [{ paneKey: "t4:l", state: "waiting", conversationName: "Modo ambiente del deck", toolName: "Bash", toolInput: "./build.sh --install", stateStartedAt: Date.now() - 90e3 }] });
+    t.result.terminals.push({ tabId: "t3", leafId: "l", handle: "h3" }, { tabId: "t4", leafId: "l", handle: "h4" }); u(ps, t); }; m(); deck.update = u; }; }
+  mock(); const v = qs.get("view");
+  if (v === "autofocus") raiseAlert("r::a|t0:l", "focus");
+  if (v === "pinned") { S.pinned = "r::b|t1:l"; render(); $("#pterm").textContent = "⏺ Editando src/auth/google.ts\n  ⎿  Updated with 12 additions and 4 removals\n\n⏺ Bash(pnpm test auth)\n  ⎿  PASS  src/auth/google.test.ts (8 tests)\n     PASS  src/auth/session.test.ts (5 tests)\n\n✻ Pensando… (esc para interrumpir)"; }
+  if (v === "ambient") { paintAmbient(); $("#ambient").classList.add("on"); }
   if (v === "settings") showSettings(); if (v === "banner" || v === "full") { P.alert = v; S.alertKey = "r::a|t0:l"; paintAlerts(); } }
 </script>
 </body>

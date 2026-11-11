@@ -15,10 +15,21 @@ via OpenDisplay. At a glance: who needs you, who is working, what just finished 
 |---|---|---|
 | ![Ajustes](docs/screenshots/settings.png) | ![Banner](docs/screenshots/alert-banner.png) | ![Grande](docs/screenshots/alert-full.png) |
 
+| Foco automático + cola | Terminal fijado | Modo ambiente |
+|---|---|---|
+| ![Foco automático](docs/screenshots/auto-focus-queue.png) | ![Terminal fijado](docs/screenshots/pinned-terminal.png) | ![Ambiente](docs/screenshots/ambient.png) |
+
 The gear menu (saved per device) sets:
-- **Vista**: Carrusel, Lista, Foco (most urgent agent big + side strip), Mosaico.
+- **Vista**: Lista (default), Carrusel, Foco (most urgent agent big + side strip), Mosaico.
 - **Mostrar**: active agents, only urgent ones, or all.
-- **Cuando un agente te necesita**: jump to its card, top banner, full-screen alert, or just an amber border.
+- **Cuando un agente te necesita**: *Foco* (default: switch to Foco with an amber border until you answer, then
+  back to your view; with 2+ waiting the side strip becomes an approval queue with Sí/No), jump to its card,
+  top banner, full-screen alert, or just an amber border.
+- **Escalation**: repeat the alert after 2 min, go full screen after 5 min unanswered. Green flash when an agent finishes.
+- **Modo ambiente**: after 10 min with nothing waiting and no touches, dims to a clock and thin activity bars;
+  any alert or touch wakes it.
+- **Fijar terminal**: in an agent's Terminal view, *Fijar* keeps its live terminal as the home screen
+  (an amber pill shows if another agent needs you; *Soltar* unpins).
 - Separate sounds for "needs you" and "finished", how long finished agents stay visible, auto-return home.
 - **Devolver el puntero al Mac**: OpenDisplay turns touches into real mouse events, which drags the Mac pointer
   onto the phone. Orca Deck hides it while the finger is down and warps it back where it was afterwards.
@@ -46,5 +57,6 @@ Touch on the phone needs OpenDisplay to have Accessibility permission on the Mac
 - `DECK_WEB_DIR=$PWD/web "build/Orca Deck.app/Contents/MacOS/OrcaDeck"` loads the HTML from disk.
 - `DECK_SNAPSHOT=/tmp/x.png DECK_SNAPSHOT_JS='…'` saves a PNG of the window after load.
 - Opening `web/index.html` in a browser shows mock data; query params preview settings,
-  e.g. `?layout=list`, `?view=settings`, `?view=banner`, `?view=full`.
+  e.g. `?layout=list`, `?view=settings`, `?view=banner`, `?view=full`, `?view=autofocus&waiting=2`,
+  `?view=pinned`, `?view=ambient`.
 - Touch detection is logged to `~/Library/Logs/OrcaDeck.log`.
