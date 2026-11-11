@@ -85,7 +85,10 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
     func placeAndFullScreen() {
         guard let s = targetScreen() else { return }
         if isFullScreen {
-            if window.screen == s { return }
+            // Rotating the phone resizes the OpenDisplay screen (936×526 ↔ 526×936). macOS normally resizes
+            // full-screen windows along with it; if it didn't, leave and re-enter full screen to fit again.
+            let fits = abs(window.frame.width - s.frame.width) < 2 && abs(window.frame.height - s.frame.height) < 2
+            if window.screen == s && fits { return }
             window.toggleFullScreen(nil)          // leave, then re-enter on the right screen
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.placeAndFullScreen() }
             return

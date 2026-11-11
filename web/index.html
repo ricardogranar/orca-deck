@@ -21,6 +21,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 /* Fixed 936×526 canvas (iPhone 8 landscape via OpenDisplay), scaled to fit the window. */
 #stage{position:absolute;inset:0;display:grid;place-items:center}
 #app{width:936px;height:526px;position:relative;zoom:var(--fit,1);overflow:hidden}
+.portrait #app{width:526px;height:936px}
 .view{position:absolute;inset:0;display:flex;flex-direction:column;transition:opacity .2s,transform .25s}
 .view.hidden{opacity:0;pointer-events:none;transform:translateX(30px)}
 
@@ -181,6 +182,39 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .bar .bt i{position:absolute;top:0;bottom:0;width:30%;border-radius:2px;background:#2f5f99;animation:slide 2.4s ease-in-out infinite}
 @keyframes slide{0%{left:-30%}100%{left:100%}}
 #ambient .amsg{text-align:center;font-size:20px;color:#3d3d3d;margin-top:24px}
+/* ── portrait (iPhone held upright: OpenDisplay turns the Mac display into 526×936) ── */
+.portrait .head{height:auto;flex-wrap:wrap;row-gap:6px;padding:16px 22px 10px}
+.portrait .summary{order:9;width:100%;font-size:24px}
+.portrait .clock{font-size:32px}
+.portrait #rail{padding:4px 22px 0}
+.portrait .lay-carousel{scroll-padding:0 22px;gap:14px}
+.portrait .lay-carousel .card{width:482px;max-height:none}
+.portrait .card .title{font-size:40px;-webkit-line-clamp:4}
+.portrait .card .now{-webkit-line-clamp:4}
+.portrait .lay-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:220px}
+.portrait .lay-focus{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1.15fr) minmax(0,1fr)}
+.portrait .row{padding-left:18px;gap:12px}
+.portrait .row .sbtn{min-width:64px;padding:0 14px}
+.portrait .dhead,.portrait .dtitle,.portrait .dwhere{padding-left:22px;padding-right:22px}
+.portrait .dtitle{-webkit-line-clamp:3}
+.portrait #dbody{margin:14px 22px 0}
+.portrait .dactions{height:auto;flex-wrap:wrap;padding:14px 22px 22px}
+.portrait .dactions .btn{flex:1 1 40%}
+.portrait #sbody{padding:0 22px 24px}
+.portrait .srow{flex-wrap:wrap;gap:10px 16px}
+.portrait .srow .seg{width:100%} .portrait .srow .seg button{flex:1;padding:0 6px}
+.portrait #banner{left:12px;right:12px;flex-wrap:wrap;padding:14px 14px 14px 20px}
+.portrait #banner .rtx{flex:1 1 80%}
+.portrait #banner .sbtn{flex:1}
+.portrait #alert{padding:34px 26px 26px}
+.portrait #alert .pill{flex-wrap:wrap;row-gap:6px} .portrait #alert .pill .t{width:100%;margin-left:24px;font-size:20px}
+.portrait #alert .atitle{font-size:44px;-webkit-line-clamp:4}
+.portrait #alert .aask{-webkit-line-clamp:5}
+.portrait #alert .arow{flex-wrap:wrap} .portrait #alert .arow .btn{flex:1 1 40%}
+.portrait #ambient{padding:0 36px}
+.portrait #ambient .aclock{font-size:130px}
+.portrait #phead{flex-wrap:wrap;row-gap:8px} .portrait #phead .rt{flex:1 1 70%}
+
 #app.glow::after{content:"";position:absolute;inset:0;border:6px solid var(--waiting);border-radius:14px;pointer-events:none;z-index:7;animation:pulse 1s ease-in-out infinite}
 
 #toast{position:absolute;left:50%;bottom:22px;transform:translate(-50%,120px);background:var(--primary);color:var(--primary-foreground);
@@ -539,7 +573,7 @@ function cardHTML(a) {
 function dots() {
   const rail = $("#rail"), cards = P.layout === "carousel" ? rail.querySelectorAll(".card") : [];
   $("#dots").style.display = P.layout === "carousel" ? "" : "none";
-  const per = 2, pages = Math.ceil(cards.length / per);
+  const per = isPortrait() ? 1 : 2, pages = Math.ceil(cards.length / per);
   if (pages <= 1) { $("#dots").innerHTML = ""; return; }
   const page = Math.round(rail.scrollLeft / (rail.scrollWidth - rail.clientWidth || 1) * (pages - 1));
   $("#dots").innerHTML = Array.from({ length: pages }, (_, i) => `<i class="${i === page ? "on" : ""}"></i>`).join("");
@@ -711,7 +745,16 @@ setInterval(() => {
   $("#clock").textContent = clockText(); const b = $("#bigclock"); if (b) b.textContent = clockText();
   if (Date.now() - S.lastOk > 8000) setOnline(false);
 }, 1000);
-function fit() { document.documentElement.style.setProperty("--fit", Math.min(innerWidth / 936, innerHeight / 526)); }
+/* Landscape uses a 936×526 canvas, portrait a 526×936 one; pick by the window's shape and scale to fit. */
+const isPortrait = () => innerHeight > innerWidth * 1.05;
+function fit() {
+  const port = isPortrait(), root = document.documentElement;
+  const changed = root.classList.contains("portrait") !== port;
+  root.classList.toggle("portrait", port);
+  const [w, h] = port ? [526, 936] : [936, 526];
+  root.style.setProperty("--fit", Math.min(innerWidth / w, innerHeight / h));
+  if (changed && window.deck && S.agents) { const r = $("#rail"); r.scrollLeft = r.scrollTop = 0; render(); }
+}
 addEventListener("resize", fit); fit();
 $("#clock").textContent = clockText();
 
@@ -735,7 +778,8 @@ if (!native) { const qs = new URLSearchParams(location.search);
   if (v === "autofocus") raiseAlert("r::a|t0:l", "focus");
   if (v === "pinned") { S.pinned = "r::b|t1:l"; render(); $("#pterm").textContent = "⏺ Editando src/auth/google.ts\n  ⎿  Updated with 12 additions and 4 removals\n\n⏺ Bash(pnpm test auth)\n  ⎿  PASS  src/auth/google.test.ts (8 tests)\n     PASS  src/auth/session.test.ts (5 tests)\n\n✻ Pensando… (esc para interrumpir)"; }
   if (v === "ambient") { paintAmbient(); $("#ambient").classList.add("on"); }
-  if (v === "settings") showSettings(); if (v === "banner" || v === "full") { P.alert = v; S.alertKey = "r::a|t0:l"; paintAlerts(); } }
+  if (v === "settings") showSettings(); if (v === "banner" || v === "full") { P.alert = S.alertStyle = v; S.alertKey = "r::a|t0:l"; paintAlerts(); }
+  if (v === "detail") showDetail("r::a|t0:l"); }
 </script>
 </body>
 </html>
