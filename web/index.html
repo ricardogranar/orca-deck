@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orca Deck</title>
+<style>
+@font-face{font-family:Geist;src:url(fonts/Geist.woff2) format("woff2");font-weight:100 900}
+/* Orca dark theme tokens (from Orca's renderer CSS) */
+:root{
+  --background:#0a0a0a; --card:#171717; --muted:#262626; --accent:#404040; --border:#ffffff12;
+  --foreground:#f0f0f0; --muted-foreground:#acacac; --faint:#6b6b6b; --primary:#e5e5e5; --primary-foreground:#171717;
+  --working:#60a5fa; --waiting:#fbbf24; --done:#34d399; --idle:#737373;
+  --r:22px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-user-select:none;user-select:none}
+html,body{height:100%;background:var(--background);color:var(--foreground);overflow:hidden;
+  font-family:Geist,-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+
+/* Fixed 936×526 canvas (iPhone 8 landscape via OpenDisplay), scaled to fit the window. */
+#stage{position:absolute;inset:0;display:grid;place-items:center}
+#app{width:936px;height:526px;position:relative;zoom:var(--fit,1);overflow:hidden}
+.view{position:absolute;inset:0;display:flex;flex-direction:column;transition:opacity .2s,transform .25s}
+.view.hidden{opacity:0;pointer-events:none;transform:translateX(30px)}
+
+/* ── header ── */
+.head{height:76px;flex:none;display:flex;align-items:center;gap:14px;padding:0 28px}
+.logo{width:40px;height:40px;border-radius:10px}
+.summary{font-size:26px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
+.summary .attn{color:var(--waiting)} .summary .sep{color:var(--accent);margin:0 6px}
+.summary .dim{color:var(--muted-foreground);font-weight:500}
+.grow{flex:1}
+.clock{font-size:34px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--muted-foreground)}
+.bell{width:52px;height:52px;border-radius:14px;background:var(--card);display:grid;place-items:center;color:var(--muted-foreground)}
+.bell svg{width:24px;height:24px}
+.offline{position:absolute;left:28px;right:28px;top:76px;bottom:28px;display:none;place-items:center;text-align:center;
+  background:var(--background);z-index:3}
+.offline.on{display:grid}
+.offline b{display:block;font-size:40px;font-weight:600;margin-bottom:8px}
+.offline span{font-size:24px;color:var(--muted-foreground)}
+
+/* ── carousel ── */
+#rail{flex:1;display:flex;gap:18px;padding:4px 28px 0;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 28px}
+#rail.dragging{scroll-snap-type:none}
+#rail::-webkit-scrollbar{display:none}
+.card{flex:none;width:430px;height:100%;max-height:398px;scroll-snap-align:start;background:var(--card);border:1px solid var(--border);
+  border-radius:var(--r);padding:24px 26px 22px;display:flex;flex-direction:column;cursor:pointer;position:relative;transition:transform .15s}
+.card:active{transform:scale(.985)}
+.card.waiting{border:2px solid var(--waiting);background:linear-gradient(180deg,#2a2208 0%,var(--card) 55%)}
+.pill{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:600;color:var(--c)}
+.pill .t{margin-left:auto;color:var(--muted-foreground);font-weight:500;font-variant-numeric:tabular-nums}
+.dot{width:14px;height:14px;border-radius:50%;background:var(--c);flex:none}
+.working{--c:var(--working)} .waiting{--c:var(--waiting)} .done{--c:var(--done)} .idle{--c:var(--idle)}
+.working .dot{animation:pulse 1.4s ease-in-out infinite}
+.waiting .dot{animation:pulse .8s ease-in-out infinite}
+.new{width:12px;height:12px;border-radius:50%;background:var(--foreground)}
+.title{font-size:36px;line-height:1.14;font-weight:600;letter-spacing:-.02em;margin-top:16px;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.now{font-size:22px;line-height:1.3;color:var(--muted-foreground);margin-top:12px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card.waiting .now{color:#fde68a}
+.where{font-size:19px;color:var(--faint);margin-top:auto;padding-top:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.answers{display:flex;gap:12px;margin-top:auto;padding-top:14px}
+.btn{height:66px;border-radius:16px;padding:0 24px;font-size:24px;font-weight:600;background:var(--muted);display:flex;align-items:center;justify-content:center;gap:10px;flex:none}
+.btn:active{transform:scale(.96)}
+.btn.primary{background:var(--primary);color:var(--primary-foreground)}
+.btn.yes{background:var(--waiting);color:#1c1300;flex:1}
+.btn.no{flex:1}
+.btn svg{width:24px;height:24px}
+#dots{height:30px;flex:none;display:flex;justify-content:center;align-items:center;gap:8px}
+#dots i{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+#dots i.on{background:var(--foreground);width:22px;border-radius:4px}
+
+/* empty */
+.calm{flex:1;display:grid;place-items:center;text-align:center;padding-bottom:30px}
+.calm .big{font-size:132px;font-weight:600;letter-spacing:-.04em;font-variant-numeric:tabular-nums;line-height:1}
+.calm .msg{font-size:26px;color:var(--muted-foreground);margin-top:14px}
+
+/* ── detail ── */
+.dhead{height:92px;flex:none;display:flex;align-items:center;gap:16px;padding:0 28px}
+.back{height:60px;padding:0 20px 0 14px;border-radius:16px;background:var(--card);font-size:24px;font-weight:600;display:flex;align-items:center;gap:6px}
+.back svg{width:28px;height:28px}
+.dtitle{font-size:34px;line-height:1.15;font-weight:600;letter-spacing:-.02em;padding:0 28px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;flex:none}
+.dwhere{font-size:20px;color:var(--faint);padding:6px 28px 0;flex:none}
+#dbody{flex:1;overflow-y:auto;margin:14px 28px 0;font-size:24px;line-height:1.4;color:#d4d4d4;min-height:0}
+#dbody::-webkit-scrollbar{display:none}
+#dbody p+p{margin-top:10px}
+#dbody .lbl{font-size:18px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+#dbody .ask{font-size:28px;color:#fde68a;font-weight:500}
+#dbody.term{background:#000;border:1px solid var(--border);border-radius:16px;padding:14px 16px;
+  font:17px/1.3 "SF Mono",ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:#d4d4d4}
+.dactions{height:100px;flex:none;display:flex;gap:12px;align-items:center;padding:0 28px}
+
+#toast{position:absolute;left:50%;bottom:22px;transform:translate(-50%,120px);background:var(--primary);color:var(--primary-foreground);
+  font-size:24px;font-weight:600;padding:14px 26px;border-radius:16px;transition:transform .25s;z-index:9;white-space:nowrap}
+#toast.on{transform:translate(-50%,0)}
+
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+</style>
+</head>
+<body>
+<div id="stage"><div id="app">
+
+  <!-- HOME -->
+  <section class="view" id="home">
+    <div class="head">
+      <img class="logo" src="orca.png" alt="">
+      <div class="summary" id="summary"></div>
+      <div class="grow"></div>
+      <div class="clock" id="clock">--:--</div>
+      <button class="bell" id="bell" data-act="sound"></button>
+    </div>
+    <div id="rail"></div>
+    <div id="dots"></div>
+  </section>
+
+  <!-- DETAIL -->
+  <section class="view hidden" id="detail">
+    <div class="dhead">
+      <button class="back" data-act="back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>Volver</button>
+      <div class="pill" id="dpill"></div>
+    </div>
+    <div class="dtitle" id="dtitle"></div>
+    <div class="dwhere" id="dwhere"></div>
+    <div id="dbody"></div>
+    <div class="dactions" id="dactions"></div>
+  </section>
+
+  <div class="offline" id="offline"><div><b>Orca no responde</b><span>Abre Orca en el Mac y esto se conecta solo.</span></div></div>
+  <div id="toast"></div>
+</div></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const store = {
+  get(k, d){ try { const v = localStorage.getItem("deck." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v){ try { localStorage.setItem("deck." + k, JSON.stringify(v)); } catch {} },
+};
+const ICON = {
+  open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M8 7h9v9"/></svg>',
+  term: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5M12 19h8"/></svg>',
+  text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
+  bellOn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 003.4 0"/></svg>',
+  bellOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.7 3A6 6 0 0118 8a21.3 21.3 0 00.6 5M17 17H3s3-2 3-9a4.67 4.67 0 01.3-1.7M10.3 21a1.94 1.94 0 003.4 0M2 2l20 20"/></svg>',
+};
+
+/* ── native bridge ── */
+const native = window.webkit?.messageHandlers?.orca;
+let seq = 0; const pending = new Map();
+function call(op, extra = {}) {
+  if (!native) return Promise.resolve({ ok: false, error: { message: "sin app nativa" } });
+  const id = ++seq;
+  return new Promise(res => { pending.set(id, res); native.postMessage({ id, op, ...extra }); });
+}
+const orca = (...args) => call("orca", { args });
+
+/* ── state ── */
+const S = { agents: [], byKey: new Map(), prev: store.get("prev", {}), sel: null, view: "summary",
+  sound: store.get("sound", true), lastOk: Date.now(), screenText: "", lastTouch: Date.now() };
+
+function kind(state) {
+  const s = String(state || "").toLowerCase();
+  if (/wait|block|perm|input|question|approv|attention|ask/.test(s)) return "waiting";
+  if (/work|run|think|busy|stream|start/.test(s)) return "working";
+  if (/done|complete|finish|success/.test(s)) return "done";
+  return "idle";
+}
+const LABEL = { waiting: "Te necesita", working: "Trabajando", done: "Listo", idle: "En pausa" };
+const GENERIC = /^(claude|codex|gemini|agent|chat|new|terminal \d+)( (chat|session|agent))?$/i;
+function titleOf(a) {
+  const pick = [a.taskTitle, a.displayName, a.conversationName, a.activity?.title, a.prompt]
+    .map(x => String(x || "").split("\n")[0].replace(/^\/\S+\.(srt|txt|md|png|jpg|pdf)\s*/i, "").trim())
+    .find(x => x && !GENERIC.test(x));
+  return pick || a.conversationName || "Agente";
+}
+function ago(ms) {
+  if (!ms) return "";
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 60) return "ahora";
+  if (s < 3600) return Math.floor(s / 60) + " min";
+  if (s < 86400) return Math.floor(s / 3600) + " h";
+  return Math.floor(s / 86400) + " d";
+}
+const clean = s => String(s || "").replace(/^\s*[-*]\s+/, "• ").replace(/```[\s\S]*?```/g, " ").replace(/[#>*_`|]+/g, " ").replace(/\s+/g, " ").trim();
+function firstSentence(md) {
+  const line = String(md || "").split("\n").map(clean).find(l => l.length > 3) || "";
+  return line;
+}
+function toolText(a) {
+  if (!a.toolName) return "";
+  let inp = String(a.toolInput || "").split("\n")[0].trim();
+  if (/^(Read|Edit|Write|MultiEdit|Glob|NotebookEdit)$/.test(a.toolName) && inp.includes("/")) inp = inp.split("/").pop();
+  const verb = { Read: "Leyendo", Edit: "Editando", MultiEdit: "Editando", Write: "Escribiendo", Bash: "Ejecutando",
+    Grep: "Buscando", Glob: "Buscando", WebFetch: "Leyendo web", WebSearch: "Buscando en la web", Task: "Delegando", Agent: "Delegando" }[a.toolName] || a.toolName;
+  return verb + (inp ? " · " + (inp.length > 80 ? inp.slice(0, 80) + "…" : inp) : "");
+}
+function askText(a) {
+  if (!a.toolName) return "Está esperando tu respuesta";
+  const inf = { Read: "leer", Edit: "editar", MultiEdit: "editar", Write: "crear", Bash: "ejecutar", WebFetch: "abrir",
+    WebSearch: "buscar", Grep: "buscar", Glob: "buscar", Task: "lanzar un subagente", Agent: "lanzar un subagente" }[a.toolName] || "usar " + a.toolName;
+  const inp = toolText(a).split(" · ").slice(1).join(" · ");
+  return "Quiere " + inf + (inp ? ": " + inp : "");
+}
+function nowText(a) {
+  if (a.k === "waiting") return askText(a);
+  if (a.k === "working") return toolText(a) || "Pensando…";
+  return firstSentence(a.lastAssistantMessage);
+}
+
+/* ── data in ── */
+window.deck = {
+  update(ps, terms) {
+    if (!ps?.ok) { setOnline(false); return; }
+    setOnline(true);
+    const handles = new Map((terms?.result?.terminals || []).map(t => [t.tabId + ":" + t.leafId, t.handle]));
+    const list = [];
+    for (const w of ps.result.worktrees || []) for (const a of w.agents || []) {
+      list.push({ ...a, w, key: w.worktreeId + "|" + a.paneKey, k: kind(a.state),
+        handle: handles.get(a.paneKey) || null, fresh: !!(a.activity?.unread || w.unread),
+        at: a.stateStartedAt || a.updatedAt || 0 });
+    }
+    changes(list);
+    S.agents = list; S.byKey = new Map(list.map(a => [a.key, a]));
+    render();
+  },
+  reply(id, json) { const r = pending.get(id); if (r) { pending.delete(id); r(json); } },
+};
+function setOnline(ok) { if (ok) S.lastOk = Date.now(); $("#offline").classList.toggle("on", !ok); }
+
+function changes(list) {
+  const first = !Object.keys(S.prev).length, next = {};
+  let chime = null, jump = null;
+  for (const a of list) {
+    next[a.key] = a.k;
+    const was = S.prev[a.key];
+    if (first || was === a.k) continue;
+    if (a.k === "waiting") { chime = "Funk"; jump = jump || a.key; }
+    else if (a.k === "done" && was === "working") { chime = chime || "Glass"; }
+  }
+  S.prev = next; store.set("prev", next);
+  if (chime && S.sound) call("sound", { name: chime });
+  if (jump) { showHome(); requestAnimationFrame(() => { $("#rail").scrollTo({ left: 0, behavior: "smooth" }); }); }
+}
+
+/* ── what the home rail shows ── */
+const RECENT = 4 * 3600e3, MAX = 8, ORDER = { waiting: 0, working: 1, done: 2, idle: 3 };
+function visible() {
+  return S.agents
+    .filter(a => a.k === "waiting" || a.k === "working" || a.fresh || (a.k === "done" && Date.now() - a.at < RECENT))
+    .sort((x, y) => ORDER[x.k] - ORDER[y.k] || (y.fresh - x.fresh) || (y.at - x.at))
+    .slice(0, MAX);
+}
+
+/* ── render ── */
+function render() {
+  const vis = visible();
+  const c = { waiting: 0, working: 0, done: 0 };
+  for (const a of vis) if (a.k in c) c[a.k]++;
+  const parts = [];
+  if (c.waiting) parts.push(`<span class="attn">${c.waiting} te ${c.waiting > 1 ? "necesitan" : "necesita"}</span>`);
+  if (c.working) parts.push(`${c.working} trabajando`);
+  if (c.done) parts.push(`<span class="dim">${c.done} ${c.done > 1 ? "listos" : "listo"}</span>`);
+  $("#summary").innerHTML = parts.join('<span class="sep">·</span>') || '<span class="dim">Orca</span>';
+  $("#bell").innerHTML = S.sound ? ICON.bellOn : ICON.bellOff;
+
+  const rail = $("#rail"), left = rail.scrollLeft;
+  if (!vis.length) {
+    rail.innerHTML = `<div class="calm" style="width:100%"><div><div class="big" id="bigclock">${clockText()}</div>
+      <div class="msg">Todo tranquilo · ningún agente trabajando</div></div></div>`;
+  } else {
+    rail.innerHTML = vis.map(cardHTML).join("") + `<div style="flex:none;width:10px"></div>`;
+  }
+  rail.scrollLeft = left;
+  dots();
+  if (S.sel) renderDetail();
+}
+
+function cardHTML(a) {
+  const answers = a.k === "waiting" && a.handle
+    ? `<div class="answers"><button class="btn yes" data-act="yes">${ICON.check} Sí</button><button class="btn no" data-act="no">No</button></div>`
+    : `<div class="where">${esc(a.w.repo)} · ${esc(a.w.displayName || "")}</div>`;
+  return `<div class="card ${a.k}" data-key="${esc(a.key)}">
+    <div class="pill"><span class="dot"></span>${LABEL[a.k]}${a.fresh && a.k === "done" ? '<span class="new"></span>' : ""}<span class="t">${ago(a.at)}</span></div>
+    <div class="title">${esc(titleOf(a))}</div>
+    <div class="now">${esc(nowText(a))}</div>
+    ${answers}
+  </div>`;
+}
+
+function dots() {
+  const rail = $("#rail"), cards = rail.querySelectorAll(".card");
+  const per = 2, pages = Math.ceil(cards.length / per);
+  if (pages <= 1) { $("#dots").innerHTML = ""; return; }
+  const page = Math.round(rail.scrollLeft / (rail.scrollWidth - rail.clientWidth || 1) * (pages - 1));
+  $("#dots").innerHTML = Array.from({ length: pages }, (_, i) => `<i class="${i === page ? "on" : ""}"></i>`).join("");
+}
+$("#rail").addEventListener("scroll", dots);
+
+/* ── detail ── */
+function showDetail(key) { S.sel = key; S.view = "summary"; S.screenText = ""; lastSig = ""; $("#home").classList.add("hidden"); $("#detail").classList.remove("hidden"); renderDetail(); }
+function showHome() { S.sel = null; $("#detail").classList.add("hidden"); $("#home").classList.remove("hidden"); }
+
+let lastSig = "";
+function renderDetail() {
+  const a = S.byKey.get(S.sel);
+  if (!a) { showHome(); return; }
+  const view = S.view === "term" && a.handle ? "term" : "summary";
+  const sig = [a.key, a.k, a.toolName, a.toolInput, (a.lastAssistantMessage || "").length, view, a.fresh, a.handle].join("|");
+  $("#dpill").className = "pill " + a.k;
+  $("#dpill").innerHTML = `<span class="dot"></span>${LABEL[a.k]}<span class="t">&nbsp;· ${ago(a.at)}</span>`;
+  if (sig === lastSig) { if (view === "term") paintTerm(); return; }
+  lastSig = sig;
+  $("#dtitle").textContent = titleOf(a);
+  $("#dwhere").textContent = `${a.w.repo} · ${a.w.displayName || ""} · ${a.agentType || ""}`;
+
+  const B = $("#dbody");
+  B.className = view === "term" ? "term" : "";
+  if (view === "term") { B.textContent = S.screenText || "Cargando…"; refreshTerm(); }
+  else {
+    const parts = [];
+    if (a.k === "waiting") parts.push(`<p class="ask">${esc(askText(a))}</p>`);
+    else if (a.k === "working") parts.push(`<p class="lbl">Ahora</p><p>${esc(toolText(a) || "Pensando…")}</p>`);
+    const msg = String(a.lastAssistantMessage || "").split("\n").map(clean).filter(Boolean).slice(0, 8);
+    if (msg.length) parts.push(`<p class="lbl" style="margin-top:14px">Último mensaje</p>` + msg.map(l => `<p>${esc(l)}</p>`).join(""));
+    if (!parts.length) parts.push(`<p style="color:var(--muted-foreground)">Sin detalles todavía.</p>`);
+    B.innerHTML = parts.join("");
+    B.scrollTop = 0;
+  }
+
+  const acts = [];
+  if (a.k === "waiting" && a.handle) acts.push(`<button class="btn yes" data-act="yes">${ICON.check} Sí</button>`, `<button class="btn no" data-act="no">No</button>`);
+  acts.push(`<button class="btn primary" data-act="open">${ICON.open} Abrir en Orca</button>`);
+  if (a.handle) acts.push(view === "term"
+    ? `<button class="btn" data-act="summary">${ICON.text} Resumen</button>`
+    : `<button class="btn" data-act="term">${ICON.term} Terminal</button>`);
+  if (a.fresh && a.k !== "waiting") acts.push(`<button class="btn" data-act="seen">${ICON.check} Visto</button>`);
+  $("#dactions").innerHTML = acts.join("");
+}
+
+let termBusy = false;
+async function refreshTerm() {
+  const a = S.byKey.get(S.sel);
+  if (!a?.handle || termBusy || S.view !== "term") return;
+  termBusy = true;
+  const r = await orca("terminal", "read", "--terminal", a.handle, "--screen");
+  termBusy = false;
+  const tail = r?.result?.terminal?.tail;
+  if (!Array.isArray(tail)) { S.screenText = "No se pudo leer el terminal."; paintTerm(); return; }
+  let e = tail.length; while (e && !tail[e - 1].trim()) e--;
+  S.screenText = tail.slice(Math.max(0, e - 40), e).map(l => l.replace(/\s+$/, "")).join("\n");
+  paintTerm();
+}
+let painted = "";
+function paintTerm() {
+  const B = $("#dbody"); if (!B.classList.contains("term") || S.screenText === painted) return;
+  B.textContent = painted = S.screenText; B.scrollTop = B.scrollHeight;
+}
+setInterval(() => { if (S.sel && S.view === "term") refreshTerm(); }, 1500);
+
+/* ── actions ── */
+function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 1600); }
+const ok = (r, what) => { if (r?.ok) return true; toast(what + ": " + String(r?.error?.message || "error").slice(0, 50)); return false; };
+const wtSel = a => a.w.address?.worktree || "id:" + a.w.worktreeId;
+
+async function act(name, a) {
+  if (name === "back") return showHome();
+  if (name === "sound") { S.sound = !S.sound; store.set("sound", S.sound); toast(S.sound ? "Sonido activado" : "Sonido desactivado"); return render(); }
+  if (!a) return;
+  if (name === "open") {
+    call("focusOrca");   // first, while the deck is still the active app (macOS only lets the active app hand over focus)
+    const r = await orca("worktree", "activate", "--worktree", wtSel(a));
+    if (a.handle) await orca("terminal", "switch", "--terminal", a.handle); else if (!ok(r, "No se pudo abrir")) return;
+    toast("Abierto en Orca");
+  }
+  if (name === "yes" || name === "no") {
+    // Enter accepts the highlighted (default "Yes") option; Esc declines. Works for Claude Code and Codex prompts.
+    const r = await orca("terminal", "send", "--terminal", a.handle, "--text", name === "yes" ? "\r" : "\u001b");
+    if (ok(r, "No se envió")) toast(name === "yes" ? "Aprobado" : "Rechazado");
+  }
+  if (name === "term" || name === "summary") { S.view = name; lastSig = ""; painted = ""; renderDetail(); }
+  if (name === "seen") { const r = await orca("worktree", "set", "--worktree", wtSel(a), "--read"); if (ok(r, "Error")) toast("Marcado como visto"); }
+}
+
+/* Touches from the phone arrive as mouse drags: drag to scroll, tap to click. */
+let drag = null, moved = false;
+document.addEventListener("mousedown", e => {
+  const sc = e.target.closest("#rail,#dbody"); S.lastTouch = Date.now(); moved = false;
+  if (!sc) return;
+  drag = { sc, x: e.clientX, y: e.clientY, l: sc.scrollLeft, t: sc.scrollTop, h: sc.id === "rail", v: 0, lx: e.clientX, lt: performance.now() };
+  moved = false;
+});
+document.addEventListener("mousemove", e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!moved && Math.hypot(dx, dy) > 8) { moved = true; if (drag.h) drag.sc.classList.add("dragging"); }
+  if (!moved) return;
+  if (drag.h) { drag.sc.scrollLeft = drag.l - dx; const now = performance.now(); drag.v = (e.clientX - drag.lx) / Math.max(1, now - drag.lt); drag.lx = e.clientX; drag.lt = now; }
+  else drag.sc.scrollTop = drag.t - dy;
+});
+document.addEventListener("mouseup", () => {
+  if (drag?.h && moved) {
+    const rail = drag.sc, cards = [...rail.querySelectorAll(".card")];
+    const step = cards.length > 1 ? cards[1].offsetLeft - cards[0].offsetLeft : rail.clientWidth;
+    let idx = Math.round(rail.scrollLeft / step);
+    if (drag.v < -0.4) idx = Math.ceil(rail.scrollLeft / step); else if (drag.v > 0.4) idx = Math.floor(rail.scrollLeft / step);
+    rail.scrollTo({ left: Math.max(0, idx * step), behavior: "smooth" });
+    setTimeout(() => rail.classList.remove("dragging"), 400);
+  }
+  drag = null;
+  // Touching the phone activates the deck; hand the keyboard back to the Mac app the user was in,
+  // unless this tap is "Abrir en Orca" (which brings Orca forward itself). Runs after the click handler.
+  setTimeout(() => { if (!holdFocus) call("yield"); holdFocus = false; }, 0);
+});
+let holdFocus = false;
+document.addEventListener("click", e => {
+  if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; return; }
+  const btn = e.target.closest("[data-act]");
+  if (btn?.dataset.act === "open") holdFocus = true;
+  const card = e.target.closest(".card");
+  const key = card?.dataset.key || S.sel;
+  if (btn) { act(btn.dataset.act, S.byKey.get(key)); return; }
+  if (card) showDetail(card.dataset.key);
+}, true);
+
+/* After a minute without touches, go back to the overview. */
+setInterval(() => { if (S.sel && Date.now() - S.lastTouch > 60e3) showHome(); }, 5e3);
+
+/* ── clock, liveness, fit ── */
+const clockText = () => new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+setInterval(() => {
+  $("#clock").textContent = clockText(); const b = $("#bigclock"); if (b) b.textContent = clockText();
+  if (Date.now() - S.lastOk > 8000) setOnline(false);
+}, 1000);
+function fit() { document.documentElement.style.setProperty("--fit", Math.min(innerWidth / 936, innerHeight / 526)); }
+addEventListener("resize", fit); fit();
+$("#clock").textContent = clockText();
+
+/* Browser preview with mock data when there is no native shell. */
+window.mock = () => {
+  const n = Date.now(), A = (i, state, x = {}) => ({ paneKey: "t" + i + ":l", state, agentType: "claude", stateStartedAt: n - (i + 1) * 260e3,
+    conversationName: ["Migrar la base de datos a Postgres 17", "Arreglar el login con Google", "Landing de Black Friday", "Tests e2e del onboarding"][i],
+    lastAssistantMessage: "## Hecho\nHe cambiado **3 archivos** y los tests pasan.\n- `auth.ts`", ...x });
+  deck.update({ ok: true, result: { worktrees: [
+    { worktreeId: "r::a", repo: "trainerstudio", displayName: "postgres-17", agents: [A(0, "waiting", { toolName: "Bash", toolInput: "pnpm prisma migrate deploy" })] },
+    { worktreeId: "r::b", repo: "trainerstudio", displayName: "fix-login", agents: [A(1, "working", { toolName: "Edit", toolInput: "src/auth/google.ts" })] },
+    { worktreeId: "r::c", repo: "landing", displayName: "black-friday", agents: [A(2, "done", { activity: { unread: true } }), A(3, "working", { toolName: "Bash", toolInput: "pnpm test:e2e" })] },
+  ] } }, { result: { terminals: [{ tabId: "t0", leafId: "l", handle: "h0" }] } });
+};
+if (!native) mock();
+</script>
+</body>
+</html>
