@@ -5,6 +5,15 @@ via OpenDisplay. At a glance: who needs you, who is working, what just finished 
 
 ![Carrusel](docs/screenshots/carousel.png)
 
+## Portrait
+
+Hold the phone upright and OpenDisplay turns the Mac display into 526×936; the deck switches to a portrait
+canvas automatically (and back when you turn it again). Every view, alert and the settings adapt.
+
+| Lista | Foco + cola | Detalle |
+|---|---|---|
+| ![Lista vertical](docs/screenshots/portrait-list.png) | ![Foco vertical](docs/screenshots/portrait-focus-queue.png) | ![Detalle vertical](docs/screenshots/portrait-detail.png) |
+
 ## Views (gear ⚙️ menu)
 
 | Lista | Foco | Mosaico |
@@ -41,7 +50,7 @@ The gear menu (saved per device) sets:
   display whose name contains "iPhone"/"OpenDisplay" (override with `DECK_SCREEN=<name>`).
   After each tap it hands keyboard focus back to the previous app (usually Orca).
   Clicking the Dock icon while it runs puts it back on the phone.
-- UI is a fixed 936×526 canvas (iPhone 8 landscape via OpenDisplay), scaled to fit, using Orca's dark
+- UI is a fixed 936×526 canvas in landscape or 526×936 in portrait (iPhone 8 via OpenDisplay), scaled to fit, using Orca's dark
   theme tokens and the Geist font.
 - Polls `orca worktree ps --json` + `orca terminal list --json` every 1.5 s.
 - UI is `web/index.html` (WKWebView). It can only run whitelisted `orca` subcommands.
@@ -58,5 +67,6 @@ Touch on the phone needs OpenDisplay to have Accessibility permission on the Mac
 - `DECK_SNAPSHOT=/tmp/x.png DECK_SNAPSHOT_JS='…'` saves a PNG of the window after load.
 - Opening `web/index.html` in a browser shows mock data; query params preview settings,
   e.g. `?layout=list`, `?view=settings`, `?view=banner`, `?view=full`, `?view=autofocus&waiting=2`,
-  `?view=pinned`, `?view=ambient`.
+  `?view=pinned`, `?view=ambient`, `?view=detail`.
+  Open it in a tall window (e.g. 526×936) to preview portrait.
 - Touch detection is logged to `~/Library/Logs/OrcaDeck.log`.
