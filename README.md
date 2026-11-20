@@ -78,9 +78,11 @@ Status of all three (iPhone, Dock, Orca version) is at the top of ⚙️ Ajustes
 
 ## How it works
 
-- Native AppKit window (`main.swift`; Dock guard, OpenDisplay watchdog and Orca check in `system.swift`) that goes native full screen (own Space, no menu bar) on the
-  display whose name contains "iPhone"/"OpenDisplay" (override with `DECK_SCREEN=<name>`).
-  After each tap it hands keyboard focus back to the previous app (usually Orca).
+- Native AppKit panel (`main.swift`; Dock guard, OpenDisplay watchdog and Orca check in `system.swift`) that covers the
+  whole display whose name contains "iPhone"/"OpenDisplay" (override with `DECK_SCREEN=<name>`), menu bar area
+  included. It is on every Space and above other windows on that screen, so switching apps or Spaces on the Mac
+  never takes it off the phone: it stays until you quit it (Dock → Quit) or close OpenDisplay on the phone.
+  It is non-activating: touching it never takes keyboard focus from the Mac app you are in.
   Clicking the Dock icon while it runs puts it back on the phone.
 - UI is a fixed 936×526 canvas in landscape or 526×936 in portrait (iPhone 8 via OpenDisplay), scaled to fit, using Orca's dark
   theme tokens and the Geist font.

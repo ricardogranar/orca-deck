@@ -1,5 +1,5 @@
 // Orca Deck — a glanceable side display for Orca agents.
-// Opens full screen (its own Space) on the iPhone/OpenDisplay screen, polls the `orca` CLI,
+// Covers the iPhone/OpenDisplay screen on every Space, polls the `orca` CLI,
 // and lets the HTML UI run a whitelisted set of orca commands.
 import AppKit
 import WebKit
@@ -81,8 +81,19 @@ final class FirstMouseWebView: WKWebView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
+/// The deck's window. A non-activating panel: touching it never takes focus away from the Mac app you are in,
+/// and macOS doesn't hide it when another app becomes active.
+final class DeckPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+    /// On the phone it covers the whole screen, menu bar area included; don't let AppKit push it below that.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        styleMask.contains(.titled) ? super.constrainFrameRect(frameRect, to: screen) : frameRect
+    }
+}
+
 final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate {
-    var window: NSWindow!
+    var window: DeckPanel!
     var web: FirstMouseWebView!
     var pollTimer: Timer?
     var polling = false
@@ -114,46 +125,42 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
             || $0.localizedName.localizedCaseInsensitiveContains("OpenDisplay") })
     }
 
-    var isFullScreen: Bool { window.styleMask.contains(.fullScreen) }
-
-    /// Move to the iPhone screen and go native full screen there (own Space, no menu bar).
-    func placeAndFullScreen() {
+    /// Pin the deck to the phone: borderless, covering the whole screen (menu bar area too), above other windows
+    /// there and present on every Space. Native full screen would put it in its own Space, and macOS switches
+    /// the phone's Space away from it when you change apps on the Mac; this way it stays until you quit it.
+    func placeOnPhone() {
         guard let s = targetScreen() else { parkOffPhone(); return }
         showOnMac = false
-        if !window.isVisible { window.makeKeyAndOrderFront(nil) }
-        if isFullScreen {
-            // Rotating the phone resizes the OpenDisplay screen (936×526 ↔ 526×936). macOS normally resizes
-            // full-screen windows along with it; if it didn't, leave and re-enter full screen to fit again.
-            let fits = abs(window.frame.width - s.frame.width) < 2 && abs(window.frame.height - s.frame.height) < 2
-            if window.screen == s && fits { return }
-            window.toggleFullScreen(nil)          // leave, then re-enter on the right screen
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.placeAndFullScreen() }
-            return
-        }
-        window.setFrame(s.visibleFrame, display: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            if !self.isFullScreen && self.window.screen == s { self.window.toggleFullScreen(nil) }
-        }
+        if window.styleMask.contains(.titled) { window.styleMask = [.borderless, .nonactivatingPanel] }
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        window.isMovable = false
+        // Rotating the phone resizes the screen (936×526 ↔ 526×936); this runs again on every screen change.
+        if window.frame != s.frame { window.setFrame(s.frame, display: true) }
+        if !window.isVisible { window.orderFrontRegardless() }
     }
 
-    /// No phone screen (not plugged in, OpenDisplay closed or stuck). Don't take over a Mac screen with a
-    /// full-screen deck: leave full screen and hide (e.g. phone unplugged), unless `showOnMac`.
+    /// No phone screen (not plugged in, OpenDisplay closed or stuck). Hide (e.g. phone unplugged), unless
+    /// `showOnMac`: then show it as an ordinary window on the Mac with what it is waiting for.
     func parkOffPhone() {
-        if isFullScreen {
-            window.toggleFullScreen(nil)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { if self.targetScreen() == nil { self.parkOffPhone() } }
-            return
+        guard showOnMac else { if window.isVisible { window.orderOut(nil) }; return }
+        if !window.styleMask.contains(.titled) {
+            window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView, .nonactivatingPanel]
+            window.level = .normal
+            window.collectionBehavior = [.managed]
+            window.isMovable = true
+            window.setContentSize(NSSize(width: 936, height: 526))
+            window.center()
         }
-        if showOnMac {
-            if !window.isVisible || window.isMiniaturized { window.deminiaturize(nil); window.center(); window.makeKeyAndOrderFront(nil) }
-        } else if window.isVisible { window.orderOut(nil) }
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        if !window.isVisible { window.orderFrontRegardless() }
     }
 
     /// Every 2 s: OpenDisplay watchdog, Dock guard, and status for the UI.
     func tickSystem() {
         phoneLink.tick()
         dockGuard.update()
-        if targetScreen() != nil, !window.isVisible, !window.isMiniaturized { placeAndFullScreen() }
+        if targetScreen() != nil { placeOnPhone() }   // cheap when already in place
         pushStatus()
     }
 
@@ -170,14 +177,16 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
         let cfg = WKWebViewConfiguration()
         cfg.userContentController.add(self, name: "orca")
         cfg.preferences.setValue(true, forKey: "developerExtrasEnabled")
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 936, height: 526),
-                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                          backing: .buffered, defer: false)
+        window = DeckPanel(contentRect: NSRect(x: 0, y: 0, width: 936, height: 526),
+                           styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView, .nonactivatingPanel],
+                           backing: .buffered, defer: false)
+        window.hidesOnDeactivate = false
+        window.isFloatingPanel = false
         window.title = "Orca Deck"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.backgroundColor = NSColor(red: 0.04, green: 0.04, blue: 0.04, alpha: 1)
-        window.collectionBehavior = [.fullScreenPrimary, .managed]
+        window.collectionBehavior = [.managed]
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.setFrameAutosaveName("")
@@ -204,19 +213,14 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
         dockGuard.phone = { [weak self] in self?.targetScreen() }
         phoneLink.hasScreen = { [weak self] in self?.targetScreen() != nil }
         phoneLink.onChange = { [weak self] in self?.pushStatus() }
-        if targetScreen() != nil {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        } else {
-            // No phone yet: show the deck on the Mac with what it is waiting for; it moves to the phone when it appears.
-            window.center()
-            showOnMac = true
-        }
-        placeAndFullScreen()
+        // No phone yet: show the deck on the Mac with what it is waiting for; it moves to the phone when it appears.
+        if targetScreen() == nil { window.center(); showOnMac = true }
+        placeOnPhone()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                object: nil, queue: .main) { [weak self] _ in
             self?.dockGuard.update()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self?.placeAndFullScreen() }
+            self?.placeOnPhone()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self?.placeOnPhone() }
         }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in self?.poll() }
         Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in self?.tickSystem() }
@@ -332,14 +336,9 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
     func applicationShouldHandleReopen(_ s: NSApplication, hasVisibleWindows: Bool) -> Bool {
         if window.isMiniaturized { window.deminiaturize(nil) }
         if targetScreen() == nil { showOnMac = true; phoneLink.tick() }   // no phone: show it here with the status
-        window.makeKeyAndOrderFront(nil)
-        placeAndFullScreen()
+        placeOnPhone()
         poll()
         return false
-    }
-
-    func windowDidEnterFullScreen(_ n: Notification) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.yieldFocus() }
     }
 
     func webView(_ w: WKWebView, didFinish nav: WKNavigation!) {
