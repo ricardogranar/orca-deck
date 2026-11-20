@@ -4,16 +4,44 @@
 import AppKit
 import WebKit
 
+/// Orca.app wherever it is installed (/Applications, ~/Applications, a renamed copy…).
+let orcaAppURL: URL? = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.stablyai.orca")
+    ?? [URL(fileURLWithPath: "/Applications/Orca.app")].first { FileManager.default.fileExists(atPath: $0.path) }
+
 let orcaBin: String = {
     if let p = ProcessInfo.processInfo.environment["ORCA_CLI_COMMAND"], FileManager.default.isExecutableFile(atPath: p) { return p }
-    return "/Applications/Orca.app/Contents/Resources/bin/orca"
+    let bundled = (orcaAppURL ?? URL(fileURLWithPath: "/Applications/Orca.app")).appendingPathComponent("Contents/Resources/bin/orca").path
+    if FileManager.default.isExecutableFile(atPath: bundled) { return bundled }
+    for p in ["/opt/homebrew/bin/orca", "/usr/local/bin/orca"] where FileManager.default.isExecutableFile(atPath: p) { return p }
+    return bundled
 }()
 
 /// Commands the UI may run. First two args must match one of these.
 let allowed: Set<String> = [
     "worktree ps", "worktree activate", "worktree set",
     "terminal list", "terminal switch", "terminal send", "terminal read",
+    "agent read",
 ]
+
+/// Runs the orca CLI and returns its stdout as is ("" if it could not start).
+func runOrcaRaw(_ args: [String], timeout: TimeInterval = 20) -> String {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: orcaBin)
+    p.arguments = args
+    var env = ProcessInfo.processInfo.environment
+    env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (env["PATH"] ?? "")
+    p.environment = env
+    let out = Pipe()
+    p.standardOutput = out
+    p.standardError = FileHandle.nullDevice
+    do { try p.run() } catch { return "" }
+    let timer = DispatchWorkItem { if p.isRunning { p.terminate() } }
+    DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
+    let data = out.fileHandleForReading.readDataToEndOfFile()
+    p.waitUntilExit()
+    timer.cancel()
+    return String(data: data, encoding: .utf8) ?? ""
+}
 
 func runOrca(_ args: [String], timeout: TimeInterval = 20) -> String {
     let p = Process()
@@ -71,6 +99,13 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
     var touchStartedAt: TimeInterval = 0
     var cursorHidden = false
 
+    let dockGuard = DockGuard()
+    let phoneLink = PhoneLink()
+    var compat: [String: Any] = [:]
+    /// Show the deck on the Mac while there is no phone screen: it was opened, or its Dock icon clicked, without the phone.
+    var showOnMac = false
+    var lastStatus = ""
+
     func targetScreen() -> NSScreen? {
         let screens = NSScreen.screens
         if let name = ProcessInfo.processInfo.environment["DECK_SCREEN"],
@@ -83,7 +118,9 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 
     /// Move to the iPhone screen and go native full screen there (own Space, no menu bar).
     func placeAndFullScreen() {
-        guard let s = targetScreen() else { return }
+        guard let s = targetScreen() else { parkOffPhone(); return }
+        showOnMac = false
+        if !window.isVisible { window.makeKeyAndOrderFront(nil) }
         if isFullScreen {
             // Rotating the phone resizes the OpenDisplay screen (936×526 ↔ 526×936). macOS normally resizes
             // full-screen windows along with it; if it didn't, leave and re-enter full screen to fit again.
@@ -97,6 +134,36 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             if !self.isFullScreen && self.window.screen == s { self.window.toggleFullScreen(nil) }
         }
+    }
+
+    /// No phone screen (not plugged in, OpenDisplay closed or stuck). Don't take over a Mac screen with a
+    /// full-screen deck: leave full screen and hide (e.g. phone unplugged), unless `showOnMac`.
+    func parkOffPhone() {
+        if isFullScreen {
+            window.toggleFullScreen(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { if self.targetScreen() == nil { self.parkOffPhone() } }
+            return
+        }
+        if showOnMac {
+            if !window.isVisible || window.isMiniaturized { window.deminiaturize(nil); window.center(); window.makeKeyAndOrderFront(nil) }
+        } else if window.isVisible { window.orderOut(nil) }
+    }
+
+    /// Every 2 s: OpenDisplay watchdog, Dock guard, and status for the UI.
+    func tickSystem() {
+        phoneLink.tick()
+        dockGuard.update()
+        if targetScreen() != nil, !window.isVisible, !window.isMiniaturized { placeAndFullScreen() }
+        pushStatus()
+    }
+
+    func pushStatus() {
+        let st: [String: Any] = ["phone": phoneLink.state, "dock": dockGuard.status,
+                                 "openDisplay": phoneLink.appURL != nil, "orca": compat]
+        guard let data = try? JSONSerialization.data(withJSONObject: st), let json = String(data: data, encoding: .utf8),
+              json != lastStatus else { return }
+        lastStatus = json
+        web.evaluateJavaScript("window.deck && deck.native && deck.native(\(json))")
     }
 
     func applicationDidFinishLaunching(_ n: Notification) {
@@ -134,14 +201,34 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
         }
         // Focus hand-back after a tap is driven from the UI ("yield" op), so "Abrir en Orca" can skip it.
 
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        dockGuard.phone = { [weak self] in self?.targetScreen() }
+        phoneLink.hasScreen = { [weak self] in self?.targetScreen() != nil }
+        phoneLink.onChange = { [weak self] in self?.pushStatus() }
+        if targetScreen() != nil {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            // No phone yet: show the deck on the Mac with what it is waiting for; it moves to the phone when it appears.
+            window.center()
+            showOnMac = true
+        }
         placeAndFullScreen()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                object: nil, queue: .main) { [weak self] _ in
+            self?.dockGuard.update()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self?.placeAndFullScreen() }
         }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in self?.poll() }
+        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in self?.tickSystem() }
+        tickSystem()
+        q.async {
+            let c = OrcaCompat.check()
+            DispatchQueue.main.async {
+                self.compat = c
+                if let m = c["missing"] as? [String], !m.isEmpty { deckLog("orca compat: missing \(m)") }
+                self.pushStatus()
+            }
+        }
         startPointerHandBack()
     }
 
@@ -244,6 +331,7 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
     /// Clicking the Dock icon while running: bring the deck back and re-pin it to the iPhone screen.
     func applicationShouldHandleReopen(_ s: NSApplication, hasVisibleWindows: Bool) -> Bool {
         if window.isMiniaturized { window.deminiaturize(nil) }
+        if targetScreen() == nil { showOnMac = true; phoneLink.tick() }   // no phone: show it here with the status
         window.makeKeyAndOrderFront(nil)
         placeAndFullScreen()
         poll()
@@ -256,6 +344,7 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
 
     func webView(_ w: WKWebView, didFinish nav: WKNavigation!) {
         poll()
+        lastStatus = ""; pushStatus()   // status sent before the page loaded was lost
         // Debug: DECK_SNAPSHOT=/path.png writes a picture of the deck (no Screen Recording permission needed).
         if let path = ProcessInfo.processInfo.environment["DECK_SNAPSHOT"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) { self.snapshot(to: path) }
@@ -316,6 +405,19 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
             reply("{\"ok\":true}")
         case "prefs":
             if let r = body["restoreCursor"] as? Bool { restoreCursor = r; if !r { touchFrom = nil; showPointer() } }
+            if let d = body["dockGuard"] as? Bool { dockGuard.enabled = d }
+            if let r = body["autoRestart"] as? Bool { phoneLink.autoRestart = r }
+            lastStatus = ""; pushStatus()
+            reply("{\"ok\":true}")
+        case "fixDock":
+            dockGuard.requestPermission()
+            dockGuard.openAccessibilitySettings()
+            reply("{\"ok\":true}")
+        case "restartPhone":
+            phoneLink.restartNow()
+            reply("{\"ok\":true}")
+        case "status":
+            lastStatus = ""; pushStatus()
             reply("{\"ok\":true}")
         case "sound":
             NSSound(named: NSSound.Name((body["name"] as? String) ?? "Glass"))?.play()

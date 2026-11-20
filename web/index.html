@@ -241,6 +241,21 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
   font-size:24px;font-weight:600;padding:14px 26px;border-radius:16px;transition:transform .25s;z-index:9;white-space:nowrap}
 #toast.on{transform:translate(-50%,0)}
 
+/* Mac-side status: a small amber chip in the header, a block on top of Ajustes, and the "waiting for the
+   iPhone" screen shown when the deck is opened on the Mac without the phone. */
+.syschip{height:48px;padding:0 16px;border-radius:14px;background:var(--attn-bg,var(--card));color:var(--attn-text);font-size:18px;font-weight:600;flex:none;display:none}
+.syschip.on{display:block}
+.portrait .syschip{font-size:0;padding:0 14px} .portrait .syschip::before{content:"⚠";font-size:24px}
+.sys{background:var(--card);border-radius:16px;padding:6px 18px;margin-bottom:12px}
+.sys .srow{padding:10px 0}
+.sys .sv{font-size:19px;font-weight:600;color:var(--muted-foreground);flex:none}
+.sys .sv.ok{color:var(--done)} .sys .sv.bad{color:var(--attn-text)}
+#nophone{position:absolute;inset:0;background:var(--background);display:none;place-items:center;text-align:center;z-index:8;padding:40px}
+#nophone.on{display:grid}
+#nophone b{display:block;font-size:38px;font-weight:600;margin-bottom:12px}
+#nophone p{font-size:22px;color:var(--muted-foreground);margin:6px 0}
+#nophone .arow{display:flex;gap:12px;justify-content:center;margin-top:22px}
+
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 </style>
 </head>
@@ -253,6 +268,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
       <img class="logo" src="orca.png" alt="">
       <div class="summary" id="summary"></div>
       <div class="grow"></div>
+      <button class="syschip" id="syschip" data-act="settings"></button>
       <div class="clock" id="clock">--:--</div>
       <button class="bell" id="bell" data-act="sound"></button>
       <button class="bell" id="gear" data-act="settings"></button>
@@ -286,6 +302,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
   <div id="banner"></div>
   <div id="alert"></div>
   <div class="offline" id="offline"><div><b>Orca no responde</b><span>Abre Orca en el Mac y esto se conecta solo.</span></div></div>
+  <div id="nophone"></div>
   <div id="toast"></div>
 </div></div>
 
@@ -322,7 +339,7 @@ const orca = (...args) => call("orca", { args });
 
 /* ── preferences (gear menu) ── */
 const DEF = { theme: "auto", layout: "list", show: "active", alert: "focus", doneFor: 4, sndWait: true, sndDone: true, repeat: true, escalate: true,
-  ambient: true, restoreCursor: true, autoHome: true };
+  ambient: true, restoreCursor: true, autoHome: true, dockGuard: true, autoRestart: true };
 const P = Object.assign({}, DEF, store.get("prefs", {}));
 if (!native) for (const [k, v] of new URLSearchParams(location.search)) if (k in DEF) P[k] = typeof DEF[k] === "number" ? +v : typeof DEF[k] === "boolean" ? v === "1" : v;
 const SETTINGS = [
@@ -338,15 +355,19 @@ const SETTINGS = [
   ["ambient", "Modo ambiente", "Tras 10 min sin avisos ni toques: reloj y barras; despierta con cualquier aviso"],
   ["restoreCursor", "Devolver el puntero al Mac", "Al tocar el iPhone, el ratón vuelve a donde estaba y no se ve en el iPhone"],
   ["autoHome", "Volver al inicio solo", "Tras 1 min sin tocar la pantalla"],
+  ["dockGuard", "Dock fuera del iPhone", "El Dock del Mac nunca se pasa al iPhone; si llega, vuelve solo"],
+  ["autoRestart", "Reconectar OpenDisplay", "Lo abre si no está y lo reinicia si el iPhone está enchufado pero no aparece"],
 ];
+const NATIVE_PREFS = ["restoreCursor", "dockGuard", "autoRestart"];
+const nativePrefs = () => Object.fromEntries(NATIVE_PREFS.map(k => [k, P[k]]));
 function setPref(k, v) {
   P[k] = v; store.set("prefs", P);
-  if (k === "restoreCursor") call("prefs", { restoreCursor: v });
+  if (NATIVE_PREFS.includes(k)) call("prefs", { [k]: v });
   if (k === "theme") applyTheme();
   if (k === "layout") { const r = $("#rail"); r.scrollLeft = r.scrollTop = 0; }
   renderSettings(); render();
 }
-call("prefs", { restoreCursor: P.restoreCursor });
+call("prefs", nativePrefs());
 
 /* Theme: "auto" follows macOS (prefers-color-scheme); "light"/"dark" force it. The native window paints the
    same background so there is no flash of the other theme around the canvas. */
@@ -411,6 +432,7 @@ function askText(a) {
 }
 function nowText(a) {
   if (a.k === "waiting") return askText(a);
+  if (a.k === "working" && a.workingMode === "monitoring") return "Vigilando" + (a.children?.[0]?.description ? ": " + a.children[0].description : " tareas en segundo plano");
   if (a.k === "working") return toolText(a) || "Pensando…";
   return firstSentence(a.lastAssistantMessage);
 }
@@ -423,8 +445,11 @@ window.deck = {
     const handles = new Map((terms?.result?.terminals || []).map(t => [t.tabId + ":" + t.leafId, t.handle]));
     const list = [];
     for (const w of ps.result.worktrees || []) for (const a of w.agents || []) {
-      list.push({ ...a, w, key: w.worktreeId + "|" + a.paneKey, k: kind(a.state),
-        handle: handles.get(a.paneKey) || null, fresh: !!(a.activity?.unread || w.unread),
+      // Orca chats ("structured agent sessions") have no terminal: no Sí/No over the CLI, but their
+      // conversation can be read with `orca agent read`.
+      const chat = String(a.paneKey || "").startsWith("structured-agent-session-");
+      list.push({ ...a, w, key: w.worktreeId + "|" + a.paneKey, k: kind(a.state), chat,
+        handle: chat ? null : handles.get(a.paneKey) || null, fresh: !!(a.activity?.unread || w.unread),
         at: a.stateStartedAt || a.updatedAt || 0 });
     }
     const alertKey = changes(list);
@@ -432,8 +457,43 @@ window.deck = {
     render();
     if (alertKey) raiseAlert(alertKey);
   },
+  native(st) { S.sys = st; paintSys(); },
   reply(id, json) { const r = pending.get(id); if (r) { pending.delete(id); r(json); } },
 };
+/* ── Mac-side status (from the native shell every few seconds when it changes) ── */
+const PHONE = { connected: ["Conectado", "ok"], starting: ["Abriendo OpenDisplay…", ""], waiting: ["Esperando al iPhone", "bad"],
+  restarting: ["Reiniciando OpenDisplay…", ""], notInstalled: ["OpenDisplay no está instalado", "bad"], unknown: ["…", ""] };
+const DOCK = { on: ["Protegido", "ok"], off: ["Desactivado", ""], needsPermission: ["Falta permiso", "bad"], error: ["Error", "bad"] };
+function sysHTML() {
+  const st = S.sys; if (!st) return "";
+  const [pt, pc] = PHONE[st.phone] || PHONE.unknown, [dt, dc] = DOCK[st.dock] || DOCK.error;
+  const miss = st.orca?.missing || [];
+  const orcaTxt = st.orca?.found === false ? ["No encuentro Orca", "bad"] : miss.length ? ["Orca cambió: actualiza Orca Deck", "bad"]
+    : [st.orca?.version ? "Orca " + st.orca.version + " · compatible" : "Comprobando…", st.orca?.version ? "ok" : ""];
+  const row = (label, hint, [t, c], btn = "") => `<div class="srow"><div class="slbl"><b>${label}</b><span>${hint}</span></div><span class="sv ${c}">${esc(t)}</span>${btn}</div>`;
+  return `<div class="sys">` +
+    row("iPhone", "Pantalla de OpenDisplay", [pt, pc], st.phone === "waiting" ? `<button class="sbtn" data-act="restartPhone">Reiniciar</button>` : "") +
+    row("Dock del Mac", st.dock === "needsPermission" ? "Activa Orca Deck en Accesibilidad" : "No se pasa al iPhone", [dt, dc],
+      st.dock === "needsPermission" ? `<button class="sbtn" data-act="fixDock">Dar permiso</button>` : "") +
+    row("Orca", miss.length ? "Faltan: " + esc(miss.join(", ")) : "Comandos que usa el deck", orcaTxt) + `</div>`;
+}
+function paintSys() {
+  const st = S.sys || {}, miss = st.orca?.missing || [];
+  const chip = st.dock === "needsPermission" ? "Dock sin permiso" : miss.length || st.orca?.found === false ? "Orca cambió" : "";
+  $("#syschip").textContent = chip; $("#syschip").classList.toggle("on", !!chip);
+  if (!$("#settings").classList.contains("hidden")) renderSettings();
+  const N = $("#nophone"), off = st.phone && st.phone !== "connected";
+  N.classList.toggle("on", !!off);
+  if (off) {
+    const steps = st.phone === "notInstalled"
+      ? ["Instala OpenDisplay en el Mac (brew install --cask opendisplay) y en el iPhone."]
+      : ["Conecta el iPhone por cable y abre la app OpenDisplay en él.",
+         st.phone === "restarting" ? "Reiniciando OpenDisplay en el Mac…" : st.phone === "starting" ? "Abriendo OpenDisplay en el Mac…"
+           : "OpenDisplay del Mac ya está abierto; si el iPhone está enchufado y en 45 s no aparece, se reinicia solo."];
+    N.innerHTML = `<div><b>Esperando al iPhone</b>${steps.map(t => `<p>${esc(t)}</p>`).join("")}
+      <div class="arow">${st.phone === "notInstalled" ? "" : `<button class="btn" data-act="restartPhone">Reiniciar OpenDisplay</button>`}</div></div>`;
+  }
+}
 function setOnline(ok) { if (ok) S.lastOk = Date.now(); $("#offline").classList.toggle("on", !ok); }
 
 function changes(list) {
@@ -484,7 +544,7 @@ function closeAlerts() { S.alertKey = null; $("#banner").classList.remove("on");
 function paintAlerts() {
   const a = S.alertKey && S.byKey.get(S.alertKey);
   if (!a || a.k !== "waiting") { if (S.alertKey) closeAlerts(); $("#app").classList.toggle("glow", $("#app").classList.contains("glow") && S.agents.some(x => x.k === "waiting")); return; }
-  const yn = a.handle ? `<button class="sbtn yes" data-act="yes">Sí</button><button class="sbtn" data-act="no">No</button>` : "";
+  const yn = yesNo(a);
   if (S.alertStyle === "banner") {
     const B = $("#banner"); B.dataset.key = a.key;
     B.innerHTML = `<span class="dot" style="--c:var(--waiting)"></span><div class="rtx"><div class="rt">${esc(titleOf(a))}</div><div class="rn">${esc(askText(a))}</div></div>
@@ -494,7 +554,8 @@ function paintAlerts() {
     const A = $("#alert"); A.dataset.key = a.key;
     A.innerHTML = `<div class="pill waiting"><span class="dot"></span>Te necesita<span class="t">${esc(a.w.repo)} · ${esc(a.w.displayName || "")}</span></div>
       <div class="atitle">${esc(titleOf(a))}</div><div class="aask">${esc(askText(a))}</div>
-      <div class="arow">${a.handle ? `<button class="btn yes" data-act="yes">${ICON.check} Sí</button><button class="btn no" data-act="no">No</button>` : ""}
+      <div class="arow">${a.handle ? `<button class="btn yes" data-act="yes">${ICON.check} Sí</button><button class="btn no" data-act="no">No</button>`
+        : a.chat ? `<button class="btn primary" data-act="open">${ICON.open} Responder en Orca</button>` : ""}
         <button class="btn" data-act="view">Ver</button><button class="btn" data-act="dismiss">Luego</button></div>`;
     A.classList.add("on");
   }
@@ -554,7 +615,11 @@ function render() {
   if (S.sel) renderDetail();
 }
 
-function yesNo(a) { return a.k === "waiting" && a.handle ? `<button class="sbtn yes" data-act="yes">Sí</button><button class="sbtn" data-act="no">No</button>` : ""; }
+function yesNo(a) {
+  if (a.k !== "waiting") return "";
+  if (a.handle) return `<button class="sbtn yes" data-act="yes">Sí</button><button class="sbtn" data-act="no">No</button>`;
+  return a.chat ? `<button class="sbtn" data-act="open">Responder en Orca</button>` : "";
+}
 function rowHTML(a) {
   return `<div class="row ${a.k}" data-key="${esc(a.key)}"><span class="dot"></span>
     <div class="rtx"><div class="rt">${esc(titleOf(a))}</div><div class="rn">${esc(nowText(a) || a.w.repo + " · " + (a.w.displayName || ""))}</div></div>
@@ -570,7 +635,7 @@ function tileHTML(a) {
 }
 function queueHTML(a) {
   return `<div class="mini q waiting" data-key="${esc(a.key)}"><div class="rt"><span class="dot"></span><span style="overflow:hidden;text-overflow:ellipsis">${esc(titleOf(a))}</span></div>
-    ${a.handle ? `<div class="qb">${yesNo(a)}</div>` : `<div class="rn">${esc(askText(a))}</div>`}</div>`;
+    ${yesNo(a) ? `<div class="qb">${yesNo(a)}</div>` : `<div class="rn">${esc(askText(a))}</div>`}</div>`;
 }
 function renderPinned(rail, waiting) {
   const a = S.byKey.get(S.pinned); if (!a) return;
@@ -590,7 +655,7 @@ function miniHTML(a) {
 }
 
 function renderSettings() {
-  $("#sbody").innerHTML = SETTINGS.map(([k, label, hint, opts]) => `<div class="srow"><div class="slbl"><b>${label}</b><span>${hint}</span></div>${
+  $("#sbody").innerHTML = sysHTML() + SETTINGS.map(([k, label, hint, opts]) => `<div class="srow"><div class="slbl"><b>${label}</b><span>${hint}</span></div>${
     opts ? `<div class="seg">${opts.map(([v, t]) => `<button class="${P[k] === v ? "on" : ""}" data-act="set" data-k="${k}" data-v="${v}">${t}</button>`).join("")}</div>`
          : `<button class="tog ${P[k] ? "on" : ""}" data-act="toggle" data-k="${k}"></button>`}</div>`).join("");
 }
@@ -598,6 +663,7 @@ function renderSettings() {
 function cardHTML(a) {
   const answers = a.k === "waiting" && a.handle
     ? `<div class="answers"><button class="btn yes" data-act="yes">${ICON.check} Sí</button><button class="btn no" data-act="no">No</button></div>`
+    : a.k === "waiting" && a.chat ? `<div class="answers"><button class="btn primary" data-act="open">${ICON.open} Responder en Orca</button></div>`
     : `<div class="where">${esc(a.w.repo)} · ${esc(a.w.displayName || "")}</div>`;
   return `<div class="card ${a.k}" data-key="${esc(a.key)}">
     <div class="pill"><span class="dot"></span>${LABEL[a.k]}${a.fresh && a.k === "done" ? '<span class="new"></span>' : ""}<span class="t">${ago(a.at)}</span></div>
@@ -619,7 +685,7 @@ $("#rail").addEventListener("scroll", dots);
 
 /* ── detail ── */
 function showOnly(id) { for (const v of ["home", "detail", "settings"]) $("#" + v).classList.toggle("hidden", v !== id); }
-function showDetail(key) { S.sel = key; S.view = "summary"; S.screenText = ""; lastSig = ""; closeAlerts(); showOnly("detail"); renderDetail(); }
+function showDetail(key) { S.sel = key; S.view = "summary"; S.screenText = ""; S.chatHTML = ""; lastSig = ""; closeAlerts(); showOnly("detail"); renderDetail(); }
 function showHome() { S.sel = null; showOnly("home"); }
 function showSettings() { S.sel = null; renderSettings(); $("#sbody").scrollTop = 0; showOnly("settings"); }
 
@@ -627,7 +693,7 @@ let lastSig = "";
 function renderDetail() {
   const a = S.byKey.get(S.sel);
   if (!a) { showHome(); return; }
-  const view = S.view === "term" && a.handle ? "term" : "summary";
+  const view = S.view === "term" && a.handle ? "term" : S.view === "chat" && a.chat && a.orcaSessionId ? "chat" : "summary";
   const sig = [a.key, a.k, a.toolName, a.toolInput, (a.lastAssistantMessage || "").length, view, a.fresh, a.handle].join("|");
   $("#dpill").className = "pill " + a.k;
   $("#dpill").innerHTML = `<span class="dot"></span>${LABEL[a.k]}<span class="t">&nbsp;· ${ago(a.at)}</span>`;
@@ -639,6 +705,7 @@ function renderDetail() {
   const B = $("#dbody");
   B.className = view === "term" ? "term" : "";
   if (view === "term") { B.textContent = S.screenText || "Cargando…"; refreshTerm(); }
+  else if (view === "chat") { B.innerHTML = S.chatHTML || `<p style="color:var(--muted-foreground)">Cargando…</p>`; refreshChat(); }
   else {
     const parts = [];
     if (a.k === "waiting") parts.push(`<p class="ask">${esc(askText(a))}</p>`);
@@ -656,6 +723,9 @@ function renderDetail() {
   if (a.handle) acts.push(view === "term"
     ? `<button class="btn" data-act="summary">${ICON.text} Resumen</button><button class="btn" data-act="pin">Fijar</button>`
     : `<button class="btn" data-act="term">${ICON.term} Terminal</button>`);
+  else if (a.chat && a.orcaSessionId) acts.push(view === "chat"
+    ? `<button class="btn" data-act="summary">${ICON.text} Resumen</button>`
+    : `<button class="btn" data-act="chat">${ICON.text} Conversación</button>`);
   if (a.fresh && a.k !== "waiting") acts.push(`<button class="btn" data-act="seen">${ICON.check} Visto</button>`);
   $("#dactions").innerHTML = acts.join("");
 }
@@ -685,6 +755,28 @@ function paintTerm() {
 }
 setInterval(() => { if ((S.sel && S.view === "term") || pinnedOnScreen()) refreshTerm(); }, 1500);
 
+/* Orca chats: the last turns of the conversation (`orca agent read`), newest at the bottom. */
+let chatBusy = false;
+async function refreshChat() {
+  const a = S.byKey.get(S.sel);
+  if (!a?.chat || !a.orcaSessionId || chatBusy || S.view !== "chat") return;
+  chatBusy = true;
+  const r = await orca("agent", "read", "orca_session_id:" + a.orcaSessionId, "--limit", "14");
+  chatBusy = false;
+  if (S.sel !== a.key || S.view !== "chat") return;
+  const entries = r?.result?.entries;
+  const html = !Array.isArray(entries) ? `<p style="color:var(--muted-foreground)">No se pudo leer la conversación.</p>`
+    : entries.map(e => e.kind === "message"
+        ? `<p class="lbl" style="margin-top:12px">${e.role === "user" ? "Tú" : "Agente"}</p>` +
+          String(e.text || "").split("\n").map(clean).filter(Boolean).slice(0, 10).map(l => `<p>${esc(l)}</p>`).join("")
+        : `<p style="color:var(--faint)">· ${esc(e.name || e.kind)}${e.state && e.state !== "completed" ? " (" + esc(e.state) + ")" : ""}</p>`).join("");
+  if (html === S.chatHTML) return;
+  S.chatHTML = html;
+  const B = $("#dbody"), atEnd = B.scrollTop + B.clientHeight >= B.scrollHeight - 30;
+  B.innerHTML = html; if (atEnd || !B.dataset.chat) B.scrollTop = B.scrollHeight; B.dataset.chat = "1";
+}
+setInterval(() => { if (S.sel && S.view === "chat") refreshChat(); }, 3000);
+
 /* ── actions ── */
 function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 1600); }
 const ok = (r, what) => { if (r?.ok) return true; toast(what + ": " + String(r?.error?.message || "error").slice(0, 50)); return false; };
@@ -696,6 +788,8 @@ async function act(name, a) {
   if (name === "dismiss") return closeAlerts();
   if (name === "wake") return wake();
   if (name === "unpin") { S.pinned = null; store.set("pin", null); toast("Terminal suelto"); return render(); }
+  if (name === "fixDock") { call("fixDock"); return toast("Activa Orca Deck en Accesibilidad"); }
+  if (name === "restartPhone") { call("restartPhone"); return toast("Reiniciando OpenDisplay…"); }
   if (name === "sound") { S.sound = !S.sound; store.set("sound", S.sound); toast(S.sound ? "Sonido activado" : "Sonido desactivado"); return render(); }
   if (!a) return;
   if (name === "view") return showDetail(a.key);
@@ -703,15 +797,16 @@ async function act(name, a) {
   if (name === "open") {
     call("focusOrca");   // first, while the deck is still the active app (macOS only lets the active app hand over focus)
     const r = await orca("worktree", "activate", "--worktree", wtSel(a));
-    if (a.handle) await orca("terminal", "switch", "--terminal", a.handle); else if (!ok(r, "No se pudo abrir")) return;
-    toast("Abierto en Orca");
+    if (a.handle) await orca("terminal", "switch", "--terminal", a.handle);
+    // Folder workspaces can't be opened from the CLI yet; Orca is already in front, so point at the sidebar.
+    toast(r?.ok || a.handle ? "Abierto en Orca" : "Orca al frente · ábrelo en la barra lateral");
   }
   if (name === "yes" || name === "no") {
     // Enter accepts the highlighted (default "Yes") option; Esc declines. Works for Claude Code and Codex prompts.
     const r = await orca("terminal", "send", "--terminal", a.handle, "--text", name === "yes" ? "\r" : "\u001b");
     if (ok(r, "No se envió")) { toast(name === "yes" ? "Aprobado" : "Rechazado"); if (S.alertKey === a.key) closeAlerts(); }
   }
-  if (name === "term" || name === "summary") { S.view = name; lastSig = ""; painted = ""; renderDetail(); }
+  if (name === "term" || name === "summary" || name === "chat") { S.view = name; lastSig = ""; painted = ""; S.chatHTML = ""; delete $("#dbody").dataset.chat; renderDetail(); }
   if (name === "seen") { const r = await orca("worktree", "set", "--worktree", wtSel(a), "--read"); if (ok(r, "Error")) toast("Marcado como visto"); }
 }
 
@@ -812,6 +907,13 @@ if (!native) { const qs = new URLSearchParams(location.search);
     ps.result.worktrees.push({ worktreeId: "r::d", repo: "orca-deck", displayName: "ambient", agents: [{ paneKey: "t4:l", state: "waiting", conversationName: "Modo ambiente del deck", toolName: "Bash", toolInput: "./build.sh --install", stateStartedAt: Date.now() - 90e3 }] });
     t.result.terminals.push({ tabId: "t3", leafId: "l", handle: "h3" }, { tabId: "t4", leafId: "l", handle: "h4" }); u(ps, t); }; m(); deck.update = u; }; }
   mock(); const v = qs.get("view");
+  // ?sys=needsPermission|on previews the Mac status; ?view=nophone the "waiting for the iPhone" screen; ?chat=1 a waiting Orca chat.
+  if (qs.get("chat") === "1") { const ps = { ok: true, result: { worktrees: [{ worktreeId: "r::e", repo: "web", displayName: "seo", agents: [{
+    paneKey: "structured-agent-session-x:y", orcaSessionId: "x", state: "waiting", agentType: "claude", conversationName: "Análisis SEO de la home",
+    toolName: "WebFetch", toolInput: "https://example.com", stateStartedAt: Date.now() - 60e3 }] }] } };
+    deck.update(ps, { result: { terminals: [] } }); }
+  deck.native({ phone: v === "nophone" ? "waiting" : "connected", dock: qs.get("sys") || "on", openDisplay: true,
+    orca: { found: true, version: "1.4.264", missing: qs.get("compat") === "old" ? ["agent read"] : [] } });
   if (v === "autofocus") raiseAlert("r::a|t0:l", "focus");
   if (v === "pinned") { S.pinned = "r::b|t1:l"; render(); $("#pterm").textContent = "⏺ Editando src/auth/google.ts\n  ⎿  Updated with 12 additions and 4 removals\n\n⏺ Bash(pnpm test auth)\n  ⎿  PASS  src/auth/google.test.ts (8 tests)\n     PASS  src/auth/session.test.ts (5 tests)\n\n✻ Pensando… (esc para interrumpir)"; }
   if (v === "ambient") { paintAmbient(); $("#ambient").classList.add("on"); }
