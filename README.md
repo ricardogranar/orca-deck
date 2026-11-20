@@ -56,9 +56,29 @@ The gear menu (saved per device) sets:
   onto the phone. Orca Deck hides it while the finger is down and warps it back where it was afterwards.
   Touches are recognised by the event's source process (OpenDisplay) or by the pointer teleporting onto the deck.
 
+## Keeps working on its own
+
+- **The Mac's Dock never moves to the phone.** macOS moves the Dock to whichever screen the pointer pushes
+  against the Dock edge of, and OpenDisplay turns touches near the phone's edge into exactly that. Orca Deck
+  nudges pointer events in a thin strip along the phone's Dock edge a few points inward (an event tap, like
+  [DockPin](https://github.com/green2grey/DockPin)), and if the Dock still lands on the phone it pushes it back to
+  the main display. Needs **Accessibility** for Orca Deck (System Settings → Privacy & Security → Accessibility);
+  until it has it the header shows ⚠️ and Ajustes has a *Dar permiso* button. Turn it off in ⚙️ → *Dock fuera del iPhone*.
+- **Opens and unsticks OpenDisplay.** Open Orca Deck with the phone plugged in and it goes to the phone: it starts
+  OpenDisplay's Mac app if it isn't running (it doesn't come back by itself after a reboot), and restarts it when
+  the phone is on USB but no phone screen shows up for 45 s (at most 3 times per plug-in, 2 min apart).
+  Without the phone, the deck stays on the Mac showing what it is waiting for, and moves to the phone when it appears.
+  ⚙️ → *Reconectar OpenDisplay* turns this off.
+- **Orca chats.** Agents that run as Orca chats (not terminals) show *Responder en Orca* when they need you and a
+  *Conversación* view (`orca agent read`); the CLI can't answer a chat's permission prompt, so that happens in Orca.
+- **Orca updates.** On launch it checks `orca agent-context --json` for every command it uses and shows
+  *Orca cambió* (⚙️ lists what is missing) if an Orca update removed one. Orca is found by bundle id, wherever it is installed.
+
+Status of all three (iPhone, Dock, Orca version) is at the top of ⚙️ Ajustes.
+
 ## How it works
 
-- Native AppKit window (`main.swift`) that goes native full screen (own Space, no menu bar) on the
+- Native AppKit window (`main.swift`; Dock guard, OpenDisplay watchdog and Orca check in `system.swift`) that goes native full screen (own Space, no menu bar) on the
   display whose name contains "iPhone"/"OpenDisplay" (override with `DECK_SCREEN=<name>`).
   After each tap it hands keyboard focus back to the previous app (usually Orca).
   Clicking the Dock icon while it runs puts it back on the phone.
@@ -69,7 +89,12 @@ The gear menu (saved per device) sets:
 
 ## Build
 
-`./build.sh --install` → `~/Applications/Orca Deck.app` (drag it to the Dock for one-click launch).
+`./build.sh --install` → `~/Applications/Orca Deck.app` (drag it to the Dock for one-click launch). It restarts a
+running copy.
+
+Run `./make-signing-cert.sh` once first: it creates a self-signed "Orca Deck Local Signing" identity in your login
+keychain and `build.sh` signs with it, so macOS keeps the Accessibility permission across rebuilds (an ad-hoc
+signature changes every build and macOS forgets the permission). `ORCA_DECK_SIGN_ID` picks another identity.
 
 Touch on the phone needs OpenDisplay to have Accessibility permission on the Mac.
 
@@ -81,4 +106,5 @@ Touch on the phone needs OpenDisplay to have Accessibility permission on the Mac
   e.g. `?layout=list`, `?view=settings`, `?view=banner`, `?view=full`, `?view=autofocus&waiting=2`,
   `?view=pinned`, `?view=ambient`, `?view=detail`.
   Open it in a tall window (e.g. 526×936) to preview portrait; add `&theme=light` or `&theme=dark`.
-- Touch detection is logged to `~/Library/Logs/OrcaDeck.log`.
+- Touch detection, the Dock guard, OpenDisplay restarts and Orca compatibility are logged to `~/Library/Logs/OrcaDeck.log`.
+- Previews of the new states: `?sys=needsPermission`, `?compat=old`, `?view=nophone`, `?chat=1`.
