@@ -106,38 +106,53 @@ final class DockGuard {
     /// Screens were added, removed or rearranged: give the rescue another chance.
     func screensChanged() { rescueFails = 0; update() }
 
-    /// A side Dock (left or right) always sits on the display that is furthest out on its side. With the phone
-    /// arranged left of everything and a left Dock, macOS puts the Dock on the phone and no pointer push can move
-    /// it back. So when the phone is the outermost display on the Dock's side, move the phone screen in the
-    /// display arrangement: centred above the main display, else below it, else on its other side. Needs no
-    /// permission. (A bottom Dock is per display and is handled by the event tap and the rescue.)
+    /// The Dock only lives on a display whose Dock-side edge is completely free. OpenDisplay adds the phone right
+    /// next to the main display (e.g. touching its left edge), and with a left Dock that edge is then partly
+    /// covered, so macOS moves the Dock to the phone and no pointer push can bring it back. A side Dock also
+    /// goes to the display furthest out on its side. So when the phone touches the main display's Dock edge,
+    /// is the outermost display on a side Dock's side, or still has the Dock after a failed rescue, move the
+    /// phone screen in the display arrangement: centred above the main display, else below it, else on its
+    /// other side, never touching the main display's Dock edge. Needs no permission.
     private func keepPhoneOffDockSide() {
         let edge = dockEdge()
-        guard edge != .bottom, let s = phone(), let main = NSScreen.screens.first, s != main else { return }
+        guard let s = phone(), let main = NSScreen.screens.first, s != main else { return }
         let others = NSScreen.screens.filter { $0 != s }.map(quartzRect)
-        let p = quartzRect(s)
-        func outermost(_ r: CGRect) -> Bool {
-            edge == .left ? r.minX <= (others.map(\.minX).min() ?? 0) + 0.5
-                          : r.maxX >= (others.map(\.maxX).max() ?? 0) - 0.5
+        let m = quartzRect(main), p = quartzRect(s)
+        func touchesDockEdge(_ r: CGRect) -> Bool {
+            switch edge {
+            case .left:   return abs(r.maxX - m.minX) < 2 && r.maxY > m.minY + 1 && r.minY < m.maxY - 1
+            case .right:  return abs(r.minX - m.maxX) < 2 && r.maxY > m.minY + 1 && r.minY < m.maxY - 1
+            case .bottom: return abs(r.minY - m.maxY) < 2 && r.maxX > m.minX + 1 && r.minX < m.maxX - 1
+            }
         }
-        guard outermost(p) else { return }
+        func outermost(_ r: CGRect) -> Bool {
+            switch edge {
+            case .left:   return r.minX <= (others.map(\.minX).min() ?? 0) + 0.5
+            case .right:  return r.maxX >= (others.map(\.maxX).max() ?? 0) - 0.5
+            case .bottom: return false
+            }
+        }
+        let stuck = rescueFails >= 2 && dockInset(on: s, edge: edge) > 0.5
+        guard touchesDockEdge(p) || outermost(p) || stuck else { return }
         let now = ProcessInfo.processInfo.systemUptime
         guard now - lastArrange > 5 else { return }
         lastArrange = now
-        let m = quartzRect(main)
         let cx = (m.midX - p.width / 2).rounded(), cy = (m.midY - p.height / 2).rounded()
-        let candidates = [CGPoint(x: cx, y: m.minY - p.height), CGPoint(x: cx, y: m.maxY),
-                          edge == .left ? CGPoint(x: m.maxX, y: cy) : CGPoint(x: m.minX - p.width, y: cy)]
+        var candidates = [CGPoint(x: cx, y: m.minY - p.height)]                       // above
+        if edge != .bottom { candidates.append(CGPoint(x: cx, y: m.maxY)) }            // below
+        if edge != .right { candidates.append(CGPoint(x: m.maxX, y: cy)) }             // right
+        if edge != .left { candidates.append(CGPoint(x: m.minX - p.width, y: cy)) }    // left
         guard let o = candidates.first(where: { c in
             let r = CGRect(origin: c, size: p.size)
-            return !others.contains { $0.insetBy(dx: 1, dy: 1).intersects(r) } && !outermost(r)
-        }) else { deckLog("dock guard: no free place to move the phone off the \(edge.rawValue) Dock side"); return }
+            return !others.contains { $0.insetBy(dx: 1, dy: 1).intersects(r) } && !touchesDockEdge(r) && !outermost(r)
+        }) else { deckLog("dock guard: no free place to move the phone away from the \(edge.rawValue) Dock"); return }
         guard let id = s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return }
         var cfg: CGDisplayConfigRef?
         guard CGBeginDisplayConfiguration(&cfg) == .success, let cfg else { return }
         CGConfigureDisplayOrigin(cfg, id, Int32(o.x), Int32(o.y))
         let err = CGCompleteDisplayConfiguration(cfg, .permanently)
-        deckLog("dock guard: phone was outermost on the \(edge.rawValue) Dock side; moved it to \(Int(o.x)),\(Int(o.y)) (err \(err.rawValue))")
+        let why = touchesDockEdge(p) ? "touched the main display's Dock edge" : outermost(p) ? "was outermost on the Dock side" : "kept the Dock"
+        deckLog("dock guard: phone \(why) (\(edge.rawValue) Dock); moved it to \(Int(o.x)),\(Int(o.y)) (err \(err.rawValue))")
     }
 
     var status: String { !enabled ? "off" : !DockGuard.trusted ? "needsPermission" : tap == nil ? "error" : "on" }
