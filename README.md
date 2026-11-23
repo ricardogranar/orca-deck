@@ -62,9 +62,11 @@ The gear menu (saved per device) sets:
   against the Dock edge of, and OpenDisplay turns touches near the phone's edge into exactly that. Orca Deck
   nudges pointer events in a thin strip along the phone's Dock edge a few points inward (an event tap, like
   [DockPin](https://github.com/green2grey/DockPin)), and if the Dock still lands on the phone it pushes it back to
-  the main display. A side Dock (left/right) always sits on the display furthest out on its side, so if the phone is
-  arranged there (e.g. left of the laptop with a left Dock), Orca Deck moves the phone screen in the display
-  arrangement: centred above the main display, else below it, else on the other side. Needs **Accessibility** for Orca Deck (System Settings → Privacy & Security → Accessibility);
+  the main display. The Dock only lives on a display whose Dock-side edge is completely free, and a side Dock goes
+  to the display furthest out on its side. OpenDisplay adds the phone right next to the laptop (e.g. touching its
+  left edge), which sends a left Dock to the phone. So whenever the phone touches the main display's Dock edge or
+  is outermost on the Dock's side, Orca Deck moves the phone screen in the display arrangement: centred above the
+  main display, else below it, else on its other side. Needs **Accessibility** for Orca Deck (System Settings → Privacy & Security → Accessibility);
   until it has it the header shows ⚠️ and Ajustes has a *Dar permiso* button. Turn it off in ⚙️ → *Dock fuera del iPhone*.
 - **Opens and unsticks OpenDisplay.** Open Orca Deck with the phone plugged in and it goes to the phone: it starts
   OpenDisplay's Mac app if it isn't running (it doesn't come back by itself after a reboot), and restarts it when
