@@ -218,7 +218,7 @@ final class Deck: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMes
         placeOnPhone()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                object: nil, queue: .main) { [weak self] _ in
-            self?.dockGuard.update()
+            self?.dockGuard.screensChanged()
             self?.placeOnPhone()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self?.placeOnPhone() }
         }

@@ -75,6 +75,8 @@ final class DockGuard {
     private var rescuing = false
     private var lastRescue: TimeInterval = 0
     private var asked = false
+    private var rescueFails = 0
+    private var lastArrange: TimeInterval = 0
 
     static var trusted: Bool { AXIsProcessTrusted() }
 
@@ -96,8 +98,46 @@ final class DockGuard {
             if !asked { requestPermission() }
             removeTap()
         } else if tap == nil { installTap() }
+        keepPhoneOffDockSide()
         rebuildZones()
         rescueIfNeeded()
+    }
+
+    /// Screens were added, removed or rearranged: give the rescue another chance.
+    func screensChanged() { rescueFails = 0; update() }
+
+    /// A side Dock (left or right) always sits on the display that is furthest out on its side. With the phone
+    /// arranged left of everything and a left Dock, macOS puts the Dock on the phone and no pointer push can move
+    /// it back. So when the phone is the outermost display on the Dock's side, move the phone screen in the
+    /// display arrangement: centred above the main display, else below it, else on its other side. Needs no
+    /// permission. (A bottom Dock is per display and is handled by the event tap and the rescue.)
+    private func keepPhoneOffDockSide() {
+        let edge = dockEdge()
+        guard edge != .bottom, let s = phone(), let main = NSScreen.screens.first, s != main else { return }
+        let others = NSScreen.screens.filter { $0 != s }.map(quartzRect)
+        let p = quartzRect(s)
+        func outermost(_ r: CGRect) -> Bool {
+            edge == .left ? r.minX <= (others.map(\.minX).min() ?? 0) + 0.5
+                          : r.maxX >= (others.map(\.maxX).max() ?? 0) - 0.5
+        }
+        guard outermost(p) else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastArrange > 5 else { return }
+        lastArrange = now
+        let m = quartzRect(main)
+        let cx = (m.midX - p.width / 2).rounded(), cy = (m.midY - p.height / 2).rounded()
+        let candidates = [CGPoint(x: cx, y: m.minY - p.height), CGPoint(x: cx, y: m.maxY),
+                          edge == .left ? CGPoint(x: m.maxX, y: cy) : CGPoint(x: m.minX - p.width, y: cy)]
+        guard let o = candidates.first(where: { c in
+            let r = CGRect(origin: c, size: p.size)
+            return !others.contains { $0.insetBy(dx: 1, dy: 1).intersects(r) } && !outermost(r)
+        }) else { deckLog("dock guard: no free place to move the phone off the \(edge.rawValue) Dock side"); return }
+        guard let id = s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return }
+        var cfg: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&cfg) == .success, let cfg else { return }
+        CGConfigureDisplayOrigin(cfg, id, Int32(o.x), Int32(o.y))
+        let err = CGCompleteDisplayConfiguration(cfg, .permanently)
+        deckLog("dock guard: phone was outermost on the \(edge.rawValue) Dock side; moved it to \(Int(o.x)),\(Int(o.y)) (err \(err.rawValue))")
     }
 
     var status: String { !enabled ? "off" : !DockGuard.trusted ? "needsPermission" : tap == nil ? "error" : "on" }
@@ -165,7 +205,8 @@ final class DockGuard {
         let edge = dockEdge()
         guard dockInset(on: s, edge: edge) > 0.5 else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastRescue > 4, NSEvent.pressedMouseButtons == 0 else { return }
+        // Two failed pushes in a row: stop moving the pointer around until the screens change.
+        guard rescueFails < 2, now - lastRescue > 4, NSEvent.pressedMouseButtons == 0 else { return }
         guard let span = exposedSpans(of: main, edge: edge).max(by: { ($0.upperBound - $0.lowerBound) < ($1.upperBound - $1.lowerBound) })
         else { return }
         lastRescue = now
@@ -198,6 +239,7 @@ final class DockGuard {
                 CGWarpMouseCursorPosition(restore)
                 CGAssociateMouseAndMouseCursorPosition(1)
                 self.rescuing = false
+                self.rescueFails = moved ? 0 : self.rescueFails + 1
                 deckLog("dock guard: rescue \(moved ? "done" : "did not move the Dock")")
             }
         }
